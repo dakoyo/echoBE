@@ -1,0 +1,16 @@
+{
+  "name": "echoBE",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "dev:vite": "cd packages/client && yarn dev",
+    "build:vite": "cd packages/client && yarn build",
+    "dev:server": "cd services && yarn dev",
+    "build:server": "cd services && yarn build",
+    "test:server": "cd services && yarn test",
+    "dev:electron": "cd packages/electron && yarn dev",
+    "build:electron": "cd packages/electron && yarn build",
+    "install:all": "cd packages/client && yarn install && cd ../electron && yarn install && cd ../../services && yarn install"
+  }
+}
