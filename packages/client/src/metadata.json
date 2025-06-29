@@ -1,0 +1,8 @@
+{
+  "name": "Copy of EchoBE",
+  "description": "マインクラフト統合版向けのプロキシミティボイスチャットアプリ「EchoBE」のランディングページです。このインターフェースから、チャットルームへの参加や作成ができます。",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "prompt": ""
+}

@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Header } from './components/Header.js';
 import { Hero } from './components/Hero.js';
 import { Footer } from './components/Footer.js';
@@ -7,18 +7,18 @@ import { Modal } from './components/Modal.js';
 import { RoomCodeInput } from './components/RoomCodeInput.js';
 import { ChatRoom } from './components/ChatRoom.js';
 import { ConnectionInstructions } from './components/ConnectionInstructions.js';
-import { Player as PlayerClass } from './models/Player.js'; // Import the class
+import { Player as PlayerClass } from './models/Player.js';
 import { world } from './ipc/Minecraft.js';
+import { useSignaling } from './hooks/useSignaling.js';
+import { AudioPlayer } from './components/AudioPlayer.js';
 
 enum ModalType {
   NONE,
   JOIN,
 }
 
-// Centralized type definitions
 export type Role = 'owner' | 'player';
 
-// This interface is now a Data Transfer Object (DTO)
 export interface Player {
   id: number;
   name: string;
@@ -32,15 +32,60 @@ const App: React.FC = () => {
   const [view, setView] = useState<'landing' | 'chat' | 'connecting'>('landing');
   const [userRole, setUserRole] = useState<Role | null>(null);
   const [activeModal, setActiveModal] = useState<ModalType>(ModalType.NONE);
-  const [roomCode, setRoomCode] = useState('');
-  const [playerId, setPlayerId] = useState('');
-  const [currentUser, setCurrentUser] = useState<PlayerClass | null>(null); // Use the class instance
+  const [joinRoomCode, setJoinRoomCode] = useState('');
+  const [joinPlayerId, setJoinPlayerId] = useState(''); // This is the 4-digit player code
+  const [currentUser, setCurrentUser] = useState<PlayerClass | null>(null);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [playerCodeMap, setPlayerCodeMap] = useState<Map<string, string>>(new Map()); // <playerName, playerCode>
+
+  const verifyPlayerCode = useCallback((clientId: string, playerCode: string): string | null => {
+    for (const [name, code] of playerCodeMap.entries()) {
+      if (code === playerCode) {
+        return name;
+      }
+    }
+    return null;
+  }, [playerCodeMap]);
+
+  const signaling = useSignaling({ role: userRole, verifyPlayerCode });
+
+  useEffect(() => {
+    if (userRole !== 'owner' || !signaling.roomCode || !currentUser) return;
+
+    const generatePlayerCode = () => Math.floor(1000 + Math.random() * 9000).toString();
+
+    const updateAndInformPlayers = () => {
+        const worldPlayerNames = world.getPlayerNames();
+        const newCodeMap = new Map<string, string>();
+        
+        worldPlayerNames.forEach(name => {
+            if (name === currentUser.name) return;
+            
+            const code = generatePlayerCode();
+            newCodeMap.set(name, code);
+
+            const message = `=====EchoBE プレイヤー情報=====\nルームID：${signaling.roomCode}\nプレイヤーコード：${code}\n===========================`;
+            world.sendMessage(message, name);
+        });
+        setPlayerCodeMap(newCodeMap);
+    };
+    
+    updateAndInformPlayers();
+
+    world.events.on('playersJoin', updateAndInformPlayers);
+    world.events.on('playersLeave', updateAndInformPlayers);
+
+    return () => {
+        world.events.removeListener('playersJoin', updateAndInformPlayers);
+        world.events.removeListener('playersLeave', updateAndInformPlayers);
+    };
+  }, [userRole, signaling.roomCode, currentUser]);
+
 
   const openModal = useCallback((type: ModalType) => {
     setActiveModal(type);
-    setRoomCode('');
-    setPlayerId('');
+    setJoinRoomCode('');
+    setJoinPlayerId('');
   }, []);
 
   const closeModal = useCallback(() => {
@@ -49,32 +94,36 @@ const App: React.FC = () => {
 
   const handleJoinRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    if (roomCode.length === 6 && playerId.length === 4) {
-      const playerData: Player = {
-        id: parseInt(playerId, 10),
-        name: playerId,
-        isMuted: false,
-        isOwner: false,
-        volume: 100,
-        isOnline: true,
-      };
-      setCurrentUser(new PlayerClass(playerData)); // Create class instance
+    if (joinRoomCode.length === 6 && joinPlayerId.length === 4) {
+      const tempPlayer = new PlayerClass({
+          id: Date.now(),
+          name: '接続中...',
+          isMuted: false,
+          isOwner: false,
+          volume: 100,
+          isOnline: true,
+      });
+      setCurrentUser(tempPlayer);
       setUserRole('player');
+      signaling.joinRoom(joinRoomCode.toUpperCase(), joinPlayerId);
       setView('chat');
       closeModal();
     } else {
-      alert('ルームコードは6文字、プレイヤーIDは4桁で入力してください。');
+      alert('ルームコードは6文字、プレイヤーコードは4桁で入力してください。');
     }
   };
-
-  const generateRoomCode = (length: number): string => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
+  
+  // Update currentUser name when client auth is successful
+  useEffect(() => {
+    if (userRole === 'player' && signaling.self?.playerName && currentUser?.name !== signaling.self.playerName) {
+      setCurrentUser(prev => {
+        if (!prev) return null;
+        const newData = prev.toData();
+        newData.name = signaling.self.playerName;
+        return new PlayerClass(newData);
+      });
     }
-    return result;
-  };
+  }, [userRole, signaling.self, currentUser]);
 
   const handleCreateRoom = async () => {
     setIsCreatingRoom(true);
@@ -88,9 +137,9 @@ const App: React.FC = () => {
         volume: 100,
         isOnline: true,
       };
-      setCurrentUser(new PlayerClass(ownerPlayerData)); // Create class instance
+      setCurrentUser(new PlayerClass(ownerPlayerData));
       setUserRole('owner');
-      setRoomCode(generateRoomCode(6));
+      signaling.createRoom();
       setView('connecting');
     } catch (error) {
       console.error("Failed to create room:", error);
@@ -105,10 +154,21 @@ const App: React.FC = () => {
   }, []);
 
   const handleLeaveRoom = () => {
+    signaling.leaveRoom();
     setView('landing');
     setUserRole(null);
     setCurrentUser(null);
-    setRoomCode('');
+    setJoinRoomCode('');
+    setJoinPlayerId('');
+    setPlayerCodeMap(new Map());
+  };
+  
+  const handleKickPlayer = (playerName: string) => {
+      const clientId = Array.from(signaling.onlineClients.entries())
+          .find(([, name]) => name === playerName)?.[0];
+      if (clientId) {
+          signaling.kickClient(clientId);
+      }
   };
 
   const renderModalContent = () => {
@@ -122,24 +182,25 @@ const App: React.FC = () => {
                 <label className="text-sm text-[#A9A9A9] text-center">ルームコード (6文字)</label>
                 <RoomCodeInput
                   length={6}
-                  value={roomCode}
-                  onChange={setRoomCode}
+                  value={joinRoomCode}
+                  onChange={setJoinRoomCode}
                   ariaLabelPrefix="ルームコード"
+                  inputType="alphanumeric"
                 />
               </div>
               <div className="w-full flex flex-col gap-2">
-                <label className="text-sm text-[#A9A9A9] text-center">プレイヤーID (4桁)</label>
+                <label className="text-sm text-[#A9A9A9] text-center">プレイヤーコード (4桁)</label>
                 <RoomCodeInput
                     length={4}
-                    value={playerId}
-                    onChange={setPlayerId}
+                    value={joinPlayerId}
+                    onChange={setJoinPlayerId}
                     inputType="numeric"
-                    ariaLabelPrefix="プレイヤーID"
+                    ariaLabelPrefix="プレイヤーコード"
                 />
               </div>
               <button
                 type="submit"
-                disabled={roomCode.length !== 6 || playerId.length !== 4}
+                disabled={joinRoomCode.length !== 6 || joinPlayerId.length !== 4}
                 className="w-full bg-[#A9A9A9] text-[#212121] py-3 px-6 border-2 border-t-[#FFFFFF] border-l-[#FFFFFF] border-b-[#5A5A5A] border-r-[#5A5A5A] hover:bg-[#BBBBBB] active:bg-[#A9A9A9] active:border-t-[#5A5A5A] active:border-l-[#5A5A5A] active:border-b-[#FFFFFF] active:border-r-[#FFFFFF] disabled:bg-gray-600 disabled:text-gray-400 disabled:border-gray-700 disabled:cursor-not-allowed disabled:hover:bg-gray-600 disabled:active:border-gray-700"
               >
                 参加する
@@ -153,11 +214,24 @@ const App: React.FC = () => {
   };
 
   if (view === 'connecting') {
-    return <ConnectionInstructions onConnected={handleConnectionComplete} />;
+    return <ConnectionInstructions roomCode={signaling.roomCode} onConnected={handleConnectionComplete} />;
   }
 
   if (view === 'chat' && userRole && currentUser) {
-    return <ChatRoom role={userRole} currentUser={currentUser} onLeave={handleLeaveRoom} />;
+    return (
+     <>
+        <ChatRoom
+          role={userRole}
+          currentUser={currentUser}
+          onLeave={handleLeaveRoom}
+          onlineClients={signaling.onlineClients}
+          onKick={handleKickPlayer}
+        />
+        {Array.from(signaling.remoteStreams.entries()).map(([clientId, stream]) => (
+            <AudioPlayer key={clientId} stream={stream} />
+        ))}
+      </>
+    );
   }
 
   return (
