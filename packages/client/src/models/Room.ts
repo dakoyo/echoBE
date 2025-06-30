@@ -99,6 +99,16 @@ export class Room {
         }
         return newRoom;
     }
+
+    public updatePlayerStatus(clientId: string, isMuted: boolean, isDeafened: boolean): Room {
+        const newRoom = this.clone();
+        const player = newRoom.getPlayerBySignalingId(clientId);
+        if (player) {
+            player.setMuteStatus(isMuted);
+            player.setDeafenStatus(isDeafened);
+        }
+        return newRoom;
+    }
     
     public addStreamToPlayer(clientId: string, stream: MediaStream): Room {
         const newRoom = this.clone();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Sidebar } from './Sidebar.js';
 import { PlayerList } from './PlayerList.js';
 import { ControlBar } from './ControlBar.js';
@@ -9,7 +9,7 @@ import { Room } from '../models/Room.js';
 import { HamburgerIcon } from './icons/HamburgerIcon.js';
 import { world } from '../ipc/Minecraft.js';
 import { SignalingService } from '../services/SignalingService.js';
-import { AuthSuccessMessage, disconnectMessage } from '../types/signaling.js';
+import { AuthSuccessMessage, disconnectMessage, PlayerStatusUpdateBroadcastDataMessage } from '../types/signaling.js';
 import { CopyIcon } from './icons/CopyIcon.js';
 import { CheckIcon } from './icons/CheckIcon.js';
 import { ChatBox, ChatMessage } from './ChatBox.js';
@@ -51,6 +51,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
               id: Math.random(),
               name,
               isMuted: false,
+              isDeafened: false,
               isOwner: false,
               volume: 100,
               isOnline: false, // Default to false until they connect
@@ -64,6 +65,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
           id: Math.random(),
           name: ownerName,
           isMuted: false,
+          isDeafened: false,
           isOwner: true,
           volume: 100,
           isOnline: true,
@@ -107,6 +109,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
         id: Math.random(),
         name: p.name,
         isMuted: false,
+        isDeafened: false,
         isOwner: false,
         volume: 100,
         isOnline: true,
@@ -121,12 +124,34 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
         id: Math.random(),
         name,
         isMuted: false,
+        isDeafened: false,
         isOwner: false,
         volume: 100,
         isOnline: true,
         signalingId: id,
       };
       setRoom(prevRoom => prevRoom.addPlayer(newPlayerData));
+    };
+    
+    const handleError = (error: { message: string }) => {
+      alert(`エラー: ${error.message}`);
+    };
+
+    const handleRoomClosed = () => {
+      // The alert is already shown in SignalingService.
+      // This handler just needs to trigger the UI change.
+      onLeave();
+    };
+
+    const handleGameSettingUpdate = ({ audioRange, spectatorVoice }: { audioRange: number, spectatorVoice: boolean }) => {
+        if (role === 'player') {
+            setAudibleRange(audioRange);
+            setSpectatorVoice(spectatorVoice);
+        }
+    };
+
+    const handlePlayerStatusUpdate = (payload: PlayerStatusUpdateBroadcastDataMessage['payload']) => {
+      setRoom(prevRoom => prevRoom.updatePlayerStatus(payload.clientId, payload.isMuted, payload.isDeafened));
     };
 
     signalingService.on('auth-success', handleAuthSuccess);
@@ -136,6 +161,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     signalingService.on('chat-message', handleChatMessage);
     signalingService.on('room-state-received', handleRoomState);
     signalingService.on('new-peer-discovered', handleNewPeer);
+    signalingService.on('game-setting-update', handleGameSettingUpdate);
+    signalingService.on('player-status-update', handlePlayerStatusUpdate);
+    signalingService.on('error', handleError);
+    signalingService.on('room-closed', handleRoomClosed);
 
 
     return () => {
@@ -146,8 +175,29 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
       signalingService.off('chat-message', handleChatMessage);
       signalingService.off('room-state-received', handleRoomState);
       signalingService.off('new-peer-discovered', handleNewPeer);
+      signalingService.off('game-setting-update', handleGameSettingUpdate);
+      signalingService.off('player-status-update', handlePlayerStatusUpdate);
+      signalingService.off('error', handleError);
+      signalingService.off('room-closed', handleRoomClosed);
     };
-  }, [signalingService, currentUser, role]);
+  }, [signalingService, currentUser, role, onLeave]);
+
+  // Effect for Owner to broadcast setting changes
+  useEffect(() => {
+    if (role === 'owner' && signalingService) {
+        signalingService.broadcastGameSettings({
+            audioRange: audibleRange,
+            spectatorVoice: spectatorVoice,
+        });
+    }
+  }, [audibleRange, spectatorVoice, role, signalingService]);
+
+  // Effect to broadcast the current user's mute/deafen status
+  useEffect(() => {
+    if (signalingService) {
+      signalingService.sendPlayerStatus(isMuted, isDeafened);
+    }
+  }, [isMuted, isDeafened, signalingService]);
 
   useEffect(() => {
     const getDevices = async () => {
@@ -157,11 +207,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
         
         const inputs = devices.filter(device => device.kind === 'audioinput');
         setAudioInputDevices(inputs);
-        if (inputs.length > 0) setSelectedAudioInput(inputs[0].deviceId);
+        if (inputs.length > 0 && !selectedAudioInput) setSelectedAudioInput(inputs[0].deviceId);
 
         const outputs = devices.filter(device => device.kind === 'audiooutput');
         setAudioOutputDevices(outputs);
-        if (outputs.length > 0) setSelectedAudioOutput(outputs[0].deviceId);
+        if (outputs.length > 0 && !selectedAudioOutput) setSelectedAudioOutput(outputs[0].deviceId);
       } catch (err) {
         console.error("Could not get audio devices:", err);
       }
@@ -169,7 +219,20 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     getDevices();
     navigator.mediaDevices.addEventListener('devicechange', getDevices);
     return () => navigator.mediaDevices.removeEventListener('devicechange', getDevices);
-  }, []);
+  }, [selectedAudioInput, selectedAudioOutput]);
+
+  useEffect(() => {
+    if (signalingService) {
+      signalingService.setMute(isMuted);
+    }
+  }, [isMuted, signalingService]);
+
+  const handleAudioInputChange = useCallback((deviceId: string) => {
+    setSelectedAudioInput(deviceId);
+    if (signalingService) {
+      signalingService.updateLocalStream(deviceId, isMuted);
+    }
+  }, [signalingService, isMuted]);
 
   const handleVolumeChange = (player: Player, volume: number) => {
     player.setVolume(volume);
@@ -223,7 +286,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
             onClose={() => setIsSidebarOpen(false)}
             audibleRange={audibleRange} onAudibleRangeChange={setAudibleRange}
             spectatorVoice={spectatorVoice} onSpectatorVoiceChange={setSpectatorVoice}
-            audioInputDevices={audioInputDevices} selectedAudioInput={selectedAudioInput} onAudioInputChange={setSelectedAudioInput}
+            audioInputDevices={audioInputDevices} selectedAudioInput={selectedAudioInput} onAudioInputChange={handleAudioInputChange}
             audioOutputDevices={audioOutputDevices} selectedAudioOutput={selectedAudioOutput} onAudioOutputChange={setSelectedAudioOutput}
           /> 
         </div>
@@ -255,6 +318,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
               currentRole={role}
               onKick={handleInitiateKick}
               onVolumeChange={handleVolumeChange}
+              selectedAudioOutput={selectedAudioOutput}
+              isDeafened={isDeafened}
             />
           </div>
           <div className="flex-shrink-0">

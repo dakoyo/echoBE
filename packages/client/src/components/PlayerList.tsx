@@ -1,5 +1,6 @@
 
-import React from 'react';
+
+import React, { useEffect, useRef } from 'react';
 import { Role } from '../App.js';
 import { Player } from '../models/Player.js';
 import { Room } from '../models/Room.js';
@@ -7,12 +8,15 @@ import { CrownIcon } from './icons/CrownIcon.js';
 import { KickIcon } from './icons/KickIcon.js';
 import { MicIcon } from './icons/MicIcon.js';
 import { VolumeIcon } from './icons/VolumeIcon.js';
+import { HeadphonesIcon } from './icons/HeadphonesIcon.js';
 
 interface PlayerListProps {
   room: Room;
   currentRole: Role;
   onKick: (player: Player) => void;
   onVolumeChange: (player: Player, volume: number) => void;
+  selectedAudioOutput: string;
+  isDeafened: boolean;
 }
 
 const PlayerItem: React.FC<{
@@ -47,7 +51,10 @@ const PlayerItem: React.FC<{
                     aria-label={`${player.name}の音量`}
                     disabled={isOffline}
                 />
-                <MicIcon className={`w-6 h-6 flex-shrink-0 ${player.isMuted ? 'text-red-500' : 'text-gray-400'}`} muted={player.isMuted}/>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <MicIcon className={`w-6 h-6 ${player.isMuted ? 'text-red-500' : 'text-gray-400'}`} muted={player.isMuted}/>
+                    <HeadphonesIcon className={`w-6 h-6 ${player.isDeafened ? 'text-red-500' : 'text-gray-400'}`} muted={player.isDeafened}/>
+                </div>
                 {canKick && (
                     <button 
                       onClick={onKick} 
@@ -63,7 +70,42 @@ const PlayerItem: React.FC<{
     );
 }
 
-export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKick, onVolumeChange }) => {
+const PlayerAudio: React.FC<{ 
+  stream: MediaStream; 
+  outputId: string; 
+  volume: number;
+  isDeafened: boolean;
+}> = ({ stream, outputId, volume, isDeafened }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  useEffect(() => {
+    if (audioRef.current && outputId && typeof (audioRef.current as any).setSinkId === 'function') {
+      (audioRef.current as any).setSinkId(outputId)
+        .catch((err: any) => {
+          console.error('Error setting sink ID:', err);
+        });
+    }
+  }, [outputId]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      // HTMLAudioElement volume is a value between 0.0 and 1.0.
+      // The app's volume state is 0-150. We must scale it and clamp it to the valid range.
+      audioRef.current.volume = Math.min(volume / 100, 1.0);
+      audioRef.current.muted = isDeafened;
+    }
+  }, [volume, isDeafened]);
+
+  return <audio ref={audioRef} autoPlay playsInline />;
+};
+
+export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKick, onVolumeChange, selectedAudioOutput, isDeafened }) => {
   return (
     <div className="space-y-3">
       {room.otherPlayers.map(player => (
@@ -74,7 +116,14 @@ export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKic
                 onKick={() => onKick(player)}
                 onVolumeChange={(volume) => onVolumeChange(player, volume)}
             />
-            {player.stream && <audio autoPlay playsInline ref={el => { if (el) el.srcObject = player.stream; }} />}
+            {player.stream && (
+              <PlayerAudio 
+                stream={player.stream} 
+                outputId={selectedAudioOutput} 
+                volume={player.volume}
+                isDeafened={isDeafened}
+              />
+            )}
         </React.Fragment>
       ))}
     </div>

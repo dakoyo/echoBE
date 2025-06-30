@@ -1,4 +1,5 @@
 
+
 import type { PlayerData } from '../App.js';
 
 /**
@@ -9,6 +10,7 @@ export class Player {
     public readonly name: string;
     public readonly isOwner: boolean;
     private _isMuted: boolean;
+    private _isDeafened: boolean;
     private _isOnline: boolean;
     private _volume: number;
 
@@ -23,6 +25,7 @@ export class Player {
         this.name = data.name;
         this.isOwner = data.isOwner;
         this._isMuted = data.isMuted;
+        this._isDeafened = data.isDeafened;
         this._isOnline = data.isOnline;
         this._volume = data.volume;
         this.signalingId = data.signalingId;
@@ -33,6 +36,11 @@ export class Player {
     /** The player's mute status. This is read-only from outside. */
     get isMuted(): boolean {
         return this._isMuted;
+    }
+    
+    /** The player's deafen status. */
+    get isDeafened(): boolean {
+        return this._isDeafened;
     }
 
     /** The player's online status. */
@@ -73,6 +81,15 @@ export class Player {
     }
 
     /**
+     * Updates the player's deafen status.
+     * @param deafened The new deafen status.
+     */
+    public setDeafenStatus(deafened: boolean): void {
+        this._isDeafened = deafened;
+    }
+
+
+    /**
      * Creates a data object from the current instance state.
      * @returns A plain PlayerData object.
      */
@@ -82,6 +99,7 @@ export class Player {
             name: this.name,
             isOwner: this.isOwner,
             isMuted: this._isMuted,
+            isDeafened: this._isDeafened,
             isOnline: this._isOnline,
             volume: this._volume,
             signalingId: this.signalingId,

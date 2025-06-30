@@ -25,10 +25,11 @@ interface PlayerData {
 
 // イベント定義
 interface WorldEvents {
-  playersJoin: (players: string[]) => void; // プレイヤーがマインクラフトに入った時に発火する
-  playersLeave: (players: string[]) => void; // プレイヤーがマインクラフトから出た時に発火する
+  playersJoin: (playerNames: string[]) => void; // プレイヤーがマインクラフトに入った時に発火する
+  playersLeave: (playerNames: string[]) => void; // プレイヤーがマインクラフトから出た時に発火する
   tick: () => void; // マインクラフト内の1tick（0.05秒）ごとに発火する
   worldConnected: () => void; // /connect localhost:3000などのコマンドがマインクラフト内で入力され、webSocket接続が確立された時に発火する
+  codeRequest: (playerName: string) => void // プレイヤーコードを生成するようにリクエストされた時に発火
 }
 
 class WorldEventEmitter extends EventEmitter {
@@ -44,8 +45,8 @@ class WorldEventEmitter extends EventEmitter {
 class World {
   private players: Map<string, PlayerData> = new Map([
     ["Owner", { name: "Owner", location: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
-    ["Steve", { name: "Steve", location: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
-    ["Alex", { name: "Alex", location: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
+    ["Steve", { name: "Steve", location: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
+    ["Alex", { name: "Alex", location: { x: -10, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
   ]);
   private playerCodes: Map<string, string> = new Map(); // playerName -> playerCode
 

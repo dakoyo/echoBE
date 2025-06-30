@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Header } from './components/Header.js';
 import { Hero } from './components/Hero.js';
@@ -23,6 +24,7 @@ export interface PlayerData {
   id: number;
   name: string;
   isMuted: boolean;
+  isDeafened: boolean;
   isOwner: boolean;
   volume: number;
   isOnline: boolean;
@@ -85,6 +87,7 @@ const App: React.FC = () => {
           id: Date.now(),
           name: data.playerName,
           isMuted: false,
+          isDeafened: false,
           isOwner: false,
           volume: 100,
           isOnline: true,
@@ -131,6 +134,7 @@ const App: React.FC = () => {
         id: 1,
         name: ownerName,
         isMuted: false,
+        isDeafened: false,
         isOwner: true,
         volume: 100,
         isOnline: true,
@@ -161,14 +165,14 @@ const App: React.FC = () => {
     }
   }, [localStream]);
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = useCallback(() => {
     signalingServiceRef.current?.close();
     signalingServiceRef.current = null;
     setView('landing');
     setUserRole(null);
     setCurrentUser(null);
     setRoomCode('');
-  };
+  }, []);
 
   const renderModalContent = () => {
     switch (activeModal) {

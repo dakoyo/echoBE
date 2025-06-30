@@ -115,6 +115,10 @@ export interface AnswerDataMessage extends BaseDataChannelMessage<'answer', { sd
 export interface IceCandidateDataMessage extends BaseDataChannelMessage<'ice-candidate', { candidate: RTCIceCandidateInit; clientId: string }> {}
 export interface ChatDataMessage extends BaseDataChannelMessage<'chat', { text: string }> {}
 export interface ChatBroadcastDataMessage extends BaseDataChannelMessage<'chat-broadcast', { senderName: string; text: string }> {}
+export interface GameSettingDataMessage extends BaseDataChannelMessage<'game-setting', { audioRange: number; spectatorVoice: boolean }> {}
+export interface PlayerStatusDataMessage extends BaseDataChannelMessage<'player-status', { isMuted: boolean; isDeafened: boolean }> {}
+export interface PlayerStatusUpdateBroadcastDataMessage extends BaseDataChannelMessage<'player-status-update-broadcast', { clientId: string; isMuted: boolean; isDeafened: boolean }> {}
+
 
 export type DataChannelMessage = 
     | ClientJoinedDataMessage
@@ -124,4 +128,7 @@ export type DataChannelMessage =
     | AnswerDataMessage
     | IceCandidateDataMessage
     | ChatDataMessage
-    | ChatBroadcastDataMessage;
+    | ChatBroadcastDataMessage
+    | GameSettingDataMessage
+    | PlayerStatusDataMessage
+    | PlayerStatusUpdateBroadcastDataMessage;

@@ -3,7 +3,7 @@
 import { EventEmitter } from 'events';
 import { Player } from '../models/Player.js';
 import { world } from '../ipc/Minecraft.js';
-import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage } from '../types/signaling.js';
+import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage, GameSettingDataMessage, PlayerStatusDataMessage, PlayerStatusUpdateBroadcastDataMessage } from '../types/signaling.js';
 
 const SIGNALING_SERVER_URL = 'ws://localhost:8080';
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -21,11 +21,17 @@ export class SignalingService extends EventEmitter {
   public ownerId: string | null = null;
   private persistentPeers: Set<string> = new Set();
   private expectingDisconnectFor: Set<string> = new Set();
+  private latestGameSettings: { audioRange: number; spectatorVoice: boolean };
 
   constructor(role: Role, localStream: MediaStream, owner?: Player) {
     super();
     this.role = role;
     this.localStream = localStream;
+    // Initialize with default settings.
+    // For the owner, this provides a safe fallback.
+    // For a player, this is the state before receiving an update from the owner.
+    this.latestGameSettings = { audioRange: 48, spectatorVoice: true };
+    
     if (owner) {
       this.playerNames.set(owner.signalingId!, owner.name);
     }
@@ -84,18 +90,17 @@ export class SignalingService extends EventEmitter {
               this.playerNames.set(payload.clientId, payload.playerName);
             }
             this.emit('auth-success', payload);
-            if (this.role === 'player' && message.senderId) {
-                // Connect to owner
-                this.initiateWebRTCOffer(message.senderId, true);
-            }
+            // Player no longer initiates connection, waits for offer from owner.
             break;
         case 'offer':
-          if (this.role === 'owner') {
+          // Offer is now handled by the player
+          if (this.role === 'player') {
             this.handleOffer(message as OfferMessage);
           }
           break;
         case 'answer':
-          if (this.role === 'player') {
+          // Answer is now handled by the owner
+          if (this.role === 'owner') {
             this.handleAnswer(message as AnswerMessage);
           }
           break;
@@ -123,7 +128,7 @@ export class SignalingService extends EventEmitter {
   }
 
   private async createPeerConnection(peerId: string, createDataChannel: boolean): Promise<RTCPeerConnection> {
-    console.log(`Creating peer connection to ${peerId}. Data channel: ${createDataChannel}`);
+    console.log(`Creating peer connection to ${peerId}. createDataChannel: ${createDataChannel}`);
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     
     this.localStream.getTracks().forEach(track => pc.addTrack(track, this.localStream));
@@ -172,13 +177,15 @@ export class SignalingService extends EventEmitter {
     };
 
     if (createDataChannel) {
-        // Only the player initiating connection to the owner creates the data channel.
+        // The initiator of the connection (owner or p2p initiator) creates the data channel.
+        console.log(`[${this.role}] This peer is creating the data channel for ${peerId}.`);
         const dataChannel = pc.createDataChannel('main-signaling');
         this.setupDataChannel(peerId, dataChannel);
-    } else if (this.role === 'owner') {
-        // Owner sets up listener for incoming data channel from new player
+    } else {
+        // The receiver of the connection sets up a listener.
+        console.log(`[${this.role}] This peer is listening for a data channel from ${peerId}.`);
         pc.ondatachannel = (event) => {
-            console.log('[Owner] Data channel received from player:', event.channel.label);
+            console.log(`[${this.role}] Data channel [${event.channel.label}] received from ${peerId}.`);
             this.setupDataChannel(peerId, event.channel);
         };
     }
@@ -213,7 +220,14 @@ export class SignalingService extends EventEmitter {
               senderId: this.clientId!,
           }, peerId);
 
-          // 3. Mark for persistence and disconnect WebSocket.
+          // 3. Send current game settings to the new player.
+          this.sendDataChannelMessage({
+            'data-channel-type': 'game-setting',
+            payload: this.latestGameSettings,
+            senderId: this.clientId!,
+          }, peerId);
+
+          // 4. Mark for persistence and disconnect WebSocket.
           this.persistentPeers.add(peerId);
           this.expectingDisconnectFor.add(peerId);
           this.sendMessage({ type: 'disconnect', payload: { clientId: peerId }, senderId: this.clientId! });
@@ -252,7 +266,19 @@ export class SignalingService extends EventEmitter {
                 
                 // Emit for owner's own UI.
                 this.emit('chat-message', chatPayload);
+            } else if (message['data-channel-type'] === 'player-status') {
+                const payload = (message as PlayerStatusDataMessage).payload;
+                const broadcastPayload = { clientId: message.senderId, ...payload };
 
+                // Broadcast to all other players.
+                this.broadcastDataChannelMessage({
+                    'data-channel-type': 'player-status-update-broadcast',
+                    payload: broadcastPayload,
+                    senderId: this.clientId!,
+                }, message.senderId); // Exclude original sender
+
+                // Emit for owner's UI to update the status of the player who sent it.
+                this.emit('player-status-update', broadcastPayload);
             } else if (
                 message['data-channel-type'] === 'offer' ||
                 message['data-channel-type'] === 'answer' ||
@@ -293,6 +319,12 @@ export class SignalingService extends EventEmitter {
                 case 'chat-broadcast':
                     this.emit('chat-message', (message as ChatBroadcastDataMessage).payload);
                     break;
+                case 'game-setting':
+                    this.emit('game-setting-update', (message as GameSettingDataMessage).payload);
+                    break;
+                case 'player-status-update-broadcast':
+                    this.emit('player-status-update', (message as PlayerStatusUpdateBroadcastDataMessage).payload);
+                    break;
             }
         }
     } catch (error) {
@@ -311,6 +343,8 @@ export class SignalingService extends EventEmitter {
             senderId: this.clientId!,
         });
         this.emit('auth-success', { clientId: message.senderId, playerName });
+        // Owner initiates the connection and creates the data channel.
+        this.initiateWebRTCOffer(message.senderId, true);
     } else {
         this.sendMessage({
             type: 'error',
@@ -333,28 +367,32 @@ export class SignalingService extends EventEmitter {
   }
 
   private async handleOffer(message: OfferMessage) {
-    if (this.role !== 'owner') return;
-    const playerClientId = message.senderId;
-    const pc = await this.createPeerConnection(playerClientId, false); // Owner never creates data channel
+    // Player handles the offer from the owner and listens for the data channel.
+    const ownerId = message.senderId;
+    const pc = await this.createPeerConnection(ownerId, false);
     await pc.setRemoteDescription(new RTCSessionDescription(message.payload.offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
     this.sendMessage({
       type: 'answer',
-      payload: { answer, clientId: playerClientId },
+      payload: { answer, clientId: ownerId },
       senderId: this.clientId!,
     });
   }
 
   private async handleAnswer({ payload, senderId }: AnswerMessage) {
-    const pc = this.peerConnections.get(senderId!);
+    // Owner handles the answer from the player
+    const pc = this.peerConnections.get(senderId!); // senderId is player's ID
     if (pc) {
       await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
     }
   }
 
   private async handleIceCandidate({ payload, senderId }: IceCandidateMessage) {
+    // Since ICE candidates can be sent from either peer, we need to find the correct peer connection.
+    // In player-owner communication via websocket, senderId is the other party.
+    // In player-player communication via datachannel, senderId is also the other party.
     const pc = this.peerConnections.get(senderId!);
     if (pc && payload.candidate) {
       try {
@@ -424,6 +462,41 @@ export class SignalingService extends EventEmitter {
     this.emit('disconnect', payload);
   }
 
+  public async updateLocalStream(deviceId: string, isMuted: boolean) {
+    console.log(`Updating local stream to device: ${deviceId}`);
+    try {
+      this.localStream.getTracks().forEach(track => track.stop());
+
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: deviceId } }
+      });
+
+      this.localStream = newStream;
+      const newAudioTrack = newStream.getAudioTracks()[0];
+
+      if (newAudioTrack) {
+        newAudioTrack.enabled = !isMuted;
+        for (const pc of this.peerConnections.values()) {
+          const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+          if (sender) {
+            await sender.replaceTrack(newAudioTrack);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to update local stream:", err);
+      this.emit('error', { message: 'マイクの切り替えに失敗しました。' });
+    }
+  }
+
+  public setMute(muted: boolean) {
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach(track => {
+        track.enabled = !muted;
+      });
+    }
+  }
+
   public sendAuth(playerCode: string, ownerId: string) {
     if (this.role === 'player' && this.ws?.readyState === WebSocket.OPEN && this.clientId) {
       this.sendMessage({
@@ -447,6 +520,41 @@ export class SignalingService extends EventEmitter {
         this.sendDataChannelMessage({
             'data-channel-type': 'chat',
             payload: { text },
+            senderId: this.clientId!,
+        });
+    }
+  }
+
+  public sendPlayerStatus(isMuted: boolean, isDeafened: boolean) {
+    if (!this.clientId) return;
+    const payload = { isMuted, isDeafened };
+
+    if (this.role === 'owner') {
+      // Owner broadcasts their own status change to everyone.
+      const broadcastPayload = { clientId: this.clientId, ...payload };
+      this.broadcastDataChannelMessage({
+        'data-channel-type': 'player-status-update-broadcast',
+        payload: broadcastPayload,
+        senderId: this.clientId,
+      });
+      // Also emit locally for the owner's UI to update their own Player object in the Room.
+      this.emit('player-status-update', broadcastPayload);
+    } else {
+      // Player sends status update to the owner for relay.
+      this.sendDataChannelMessage({
+        'data-channel-type': 'player-status',
+        payload,
+        senderId: this.clientId,
+      });
+    }
+  }
+
+  public broadcastGameSettings(settings: { audioRange: number; spectatorVoice: boolean }) {
+    if (this.role === 'owner') {
+        this.latestGameSettings = settings;
+        this.broadcastDataChannelMessage({
+            'data-channel-type': 'game-setting',
+            payload: settings,
             senderId: this.clientId!,
         });
     }
