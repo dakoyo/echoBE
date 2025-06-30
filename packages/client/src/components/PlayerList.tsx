@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Role } from '../App.js';
 import { Player } from '../models/Player.js';
@@ -52,7 +53,7 @@ const PlayerItem: React.FC<{
                       onClick={onKick} 
                       className={`text-gray-400 ${isOffline ? '' : 'hover:text-red-500'} disabled:cursor-not-allowed disabled:text-gray-600`} 
                       aria-label={`${player.name}をキック`}
-                      disabled={isOffline}
+                      disabled={isOffline || player.isOwner}
                     >
                         <KickIcon className="w-5 h-5 flex-shrink-0"/>
                     </button>
@@ -66,13 +67,15 @@ export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKic
   return (
     <div className="space-y-3">
       {room.otherPlayers.map(player => (
-        <PlayerItem 
-            key={player.id}
-            player={player}
-            canKick={currentRole === 'owner' && !player.isOwner}
-            onKick={() => onKick(player)}
-            onVolumeChange={(volume) => onVolumeChange(player, volume)}
-        />
+        <React.Fragment key={player.id}>
+            <PlayerItem 
+                player={player}
+                canKick={currentRole === 'owner'}
+                onKick={() => onKick(player)}
+                onVolumeChange={(volume) => onVolumeChange(player, volume)}
+            />
+            {player.stream && <audio autoPlay playsInline ref={el => { if (el) el.srcObject = player.stream; }} />}
+        </React.Fragment>
       ))}
     </div>
   );

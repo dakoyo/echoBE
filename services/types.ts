@@ -38,12 +38,21 @@ export interface AuthMessage {
     senderId: string;
 }
 
+export interface OwnerInfoMessage {
+    type: 'owner-info';
+    payload: {
+        ownerId: string;
+        yourId: string;
+    };
+}
+
 export interface AuthSuccessMessage {
     type: 'auth-success';
     payload: {
         clientId: string;
         playerName: string;
     };
+    senderId: string;
 }
 
 export interface ErrorMessage {

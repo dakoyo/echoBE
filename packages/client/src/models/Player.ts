@@ -1,4 +1,5 @@
-import type { Player as PlayerData } from '../App.js';
+
+import type { PlayerData } from '../App.js';
 
 /**
  * Represents a player in the chat room with mutable state.
@@ -11,6 +12,12 @@ export class Player {
     private _isOnline: boolean;
     private _volume: number;
 
+    // Signaling properties
+    public signalingId?: string;
+    public playerCode?: string;
+    public stream?: MediaStream;
+
+
     constructor(data: PlayerData) {
         this.id = data.id;
         this.name = data.name;
@@ -18,6 +25,9 @@ export class Player {
         this._isMuted = data.isMuted;
         this._isOnline = data.isOnline;
         this._volume = data.volume;
+        this.signalingId = data.signalingId;
+        this.playerCode = data.playerCode;
+        this.stream = data.stream;
     }
 
     /** The player's mute status. This is read-only from outside. */
@@ -49,6 +59,9 @@ export class Player {
      */
     public setOnlineStatus(online: boolean): void {
         this._isOnline = online;
+        if (!online) {
+            this.stream = undefined;
+        }
     }
     
     /**
@@ -71,6 +84,9 @@ export class Player {
             isMuted: this._isMuted,
             isOnline: this._isOnline,
             volume: this._volume,
+            signalingId: this.signalingId,
+            playerCode: this.playerCode,
+            stream: this.stream,
         };
     }
     

@@ -10,6 +10,8 @@ export const SignalingEvents = {
     ERROR: 'error',
     DISCONNECT: 'disconnect',
     AUTH: 'auth',
+    AUTH_SUCCESS: 'auth-success',
+    OwnerInfo: 'owner-info',
 } as const;
 
 export const ErrorMessages = {

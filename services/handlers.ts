@@ -28,9 +28,7 @@ const safeJsonParse = (data: RawData): SignalingMessage | null => {
 };
 
 const forwardMessage = (sender: CustomWebSocket, clientSet: Set<CustomWebSocket>, message: SignalingMessage) => {
-    const targetId = message.type === SignalingEvents.OFFER || message.type === SignalingEvents.ANSWER || message.type === SignalingEvents.ICE_CANDIDATE
-        ? message.payload.clientId
-        : undefined;
+    const targetId = message.payload.clientId;
 
     if (!targetId) {
         logger.warn(`Message type ${message.type} does not have a target client. Broadcasting to room.`);
@@ -77,6 +75,7 @@ export function handleOwnerConnection(ws: CustomWebSocket) {
             case SignalingEvents.ANSWER:
             case SignalingEvents.OFFER:
             case SignalingEvents.ICE_CANDIDATE:
+            case SignalingEvents.AUTH_SUCCESS:
                 forwardMessage(ws, clientSet, message);
                 break;
             case SignalingEvents.DISCONNECT:
@@ -89,7 +88,7 @@ export function handleOwnerConnection(ws: CustomWebSocket) {
                 }
                 break;
             default:
-                logger.warn(`Owner ${ws.id} sent unhandled message type: ${message.type}`);
+                logger.warn(`Owner ${ws.id} sent unhandled message type: ${(message as {type: string}).type}`);
                 break;
         }
     });
@@ -132,6 +131,7 @@ export function handleClientConnection(ws: CustomWebSocket, roomCode: string) {
 
     logger.info(`Client ${ws.id} connected to room ${roomCode}`);
     ownerWs.send(JSON.stringify({ type: SignalingEvents.NEW_CLIENT, payload: { clientId: ws.id } }));
+    ws.send(JSON.stringify({ type: SignalingEvents.OwnerInfo, payload: { ownerId: ownerWs.id, yourId: ws.id } }))
 
     ws.on("message", (data: RawData) => {
         const message = safeJsonParse(data);
@@ -143,6 +143,8 @@ export function handleClientConnection(ws: CustomWebSocket, roomCode: string) {
             case SignalingEvents.OFFER:
             case SignalingEvents.ANSWER:
             case SignalingEvents.ICE_CANDIDATE:
+            case SignalingEvents.AUTH:
+            case SignalingEvents.AUTH_SUCCESS:
                 logger.debug(`Forwarding message from client ${ws.id} to owner ${ownerWs.id}`);
                 ownerWs.send(JSON.stringify(message));
                 break;

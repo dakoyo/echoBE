@@ -1,3 +1,4 @@
+
 // Electronのコンテキストブリッジで使う。ダミー。オーナーしか使用ができない
 
 import { EventEmitter } from "events";
@@ -46,6 +47,7 @@ class World {
     ["Steve", { name: "Steve", location: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
     ["Alex", { name: "Alex", location: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
   ]);
+  private playerCodes: Map<string, string> = new Map(); // playerName -> playerCode
 
   async getOwnerName(): Promise<string> {
     return "Owner"
@@ -62,22 +64,55 @@ class World {
   getPlayerRotation(playerName: string): PlayerRotation {
     return this.players.get(playerName)?.rotation || { x: 0, y: 0 };
   }
+
+  generatePlayerCodes(): void {
+    this.playerCodes.clear();
+    this.players.forEach((_, name) => {
+      // Don't generate a code for the owner
+      if (name !== "Owner") {
+        const code = Math.floor(1000 + Math.random() * 9000).toString();
+        this.playerCodes.set(name, code);
+      }
+    });
+    console.log("Generated Player Codes:", this.playerCodes);
+  }
+
+  getPlayerNameByCode(code: string): string | undefined {
+      for (const [name, playerCode] of this.playerCodes.entries()) {
+          if (playerCode === code) {
+              return name;
+          }
+      }
+      return undefined;
+  }
+  
+  notifyPlayersWithCodes(roomCode: string): void {
+      this.playerCodes.forEach((code, name) => {
+          const message = `=====EchoBE プレイヤー情報=====\nルームID：${roomCode}\nプレイヤー名：${name}\nプレイヤーコード：${code}\n===========================`;
+          this.sendMessage(message, name);
+      });
+  }
+
   /**
    * マインクラフトのテキストチャット内にメッセージを書き込む
    * @param message - 送信するメッセージ内容
    * @param playerName - 送信するプレイヤーの名前（undefinedならワールド全体に送信される）
    */
   sendMessage(message: string, playerName?: string) {
-    console.log(message); //テスト用にコンソールに出力
+    if (playerName) {
+        console.log(`[Sent to ${playerName}]:\n${message}`);
+    } else {
+        console.log(`[Sent to all]:\n${message}`);
+    }
   }
 
-  // プレイヤーデータを追加するメソッド（ダミー実装用）
   addPlayer(name: string, location?: PlayerLocation, rotation?: PlayerRotation): void {
     this.players.set(name, {
       name,
       location: location || { x: 0, y: 0, z: 0 },
       rotation: rotation || { x: 0, y: 0 }
     });
+    this.events.emit('playersJoin', [name]);
   }
 
   events = new WorldEventEmitter();

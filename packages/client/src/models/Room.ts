@@ -1,94 +1,128 @@
 import { Player } from './Player.js';
-import type { Player as PlayerData } from '../App.js';
+import type { PlayerData } from '../App.js';
 
 /**
  * Manages the state of the chat room, including all players.
  */
 export class Room {
     private players: Map<number, Player>;
+    public playersBySignalingId: Map<string, Player> = new Map();
     public readonly currentUser: Player;
 
     constructor(currentUser: Player, otherPlayersData: PlayerData[]) {
         this.currentUser = currentUser;
         this.players = new Map();
 
-        // Add current user to the map first
         this.players.set(currentUser.id, currentUser);
+        if (currentUser.signalingId) {
+            this.playersBySignalingId.set(currentUser.signalingId, currentUser);
+        }
         
-        // Add other players
         otherPlayersData.forEach(pData => {
-            // Ensure we don't re-add the current user or other duplicates
-            if (!this.players.has(pData.id)) {
-                this.players.set(pData.id, new Player(pData));
+            const player = new Player(pData);
+            this.players.set(player.id, player);
+            if (player.signalingId) {
+                this.playersBySignalingId.set(player.signalingId, player);
             }
         });
     }
 
-    /**
-     * Returns a sorted list of all players in the room, excluding the current user.
-     * Online players are listed first.
-     */
+    get allPlayers(): Player[] {
+        return Array.from(this.players.values());
+    }
+
     get otherPlayers(): Player[] {
-        const playersList = Array.from(this.players.values())
-                                .filter(p => p.id !== this.currentUser.id);
+        const playersList = this.allPlayers.filter(p => p.id !== this.currentUser.id);
         
         playersList.sort((a, b) => {
-          // Primary sort: online players first
-          if (a.isOnline && !b.isOnline) {
-            return -1; // a (online) comes before b (offline)
-          }
-          if (!a.isOnline && b.isOnline) {
-            return 1; // b (online) comes before a (offline)
-          }
-
-          // Secondary sort: by name, for players with the same online status
+          if (a.isOnline && !b.isOnline) return -1;
+          if (!a.isOnline && b.isOnline) return 1;
+          if (a.isOwner) return -1;
+          if (b.isOwner) return 1;
           const nameCompare = a.name.localeCompare(b.name);
-          if (nameCompare !== 0) {
-            return nameCompare;
-          }
-
-          // Tertiary sort (fallback): by ID, to guarantee stability
+          if (nameCompare !== 0) return nameCompare;
           return a.id - b.id;
         });
 
         return playersList;
     }
     
-    /**
-     * The number of other players who are currently online.
-     */
-    get onlinePlayerCount(): number {
-        return this.otherPlayers.filter(p => p.isOnline).length;
+    public getPlayerBySignalingId(id: string): Player | undefined {
+        return this.playersBySignalingId.get(id);
     }
     
-    /**
-     * Retrieves a specific player by their ID.
-     * @param id The ID of the player to find.
-     * @returns The Player instance or undefined if not found.
-     */
-    public getPlayer(id: number): Player | undefined {
-        return this.players.get(id);
-    }
-
-    /**
-     * Creates a new Room instance without the specified player.
-     * @param playerToKick The player instance to remove from the room.
-     * @returns A new Room instance.
-     */
-    public kickPlayer(playerToKick: Player): Room {
-        const newPlayersData = Array.from(this.players.values())
-            .filter(p => p.id !== playerToKick.id && p.id !== this.currentUser.id)
-            .map(p => p.toData());
+    public updatePlayerByAuth(clientId: string, playerName: string): Room {
+        const newRoom = this.clone();
+        // Find player by name, since that's what we know from Minecraft world state
+        const playerToUpdate = newRoom.allPlayers.find(p => p.name === playerName);
         
-        return new Room(this.currentUser.clone(), newPlayersData);
+        if (playerToUpdate) {
+            playerToUpdate.signalingId = clientId;
+            playerToUpdate.setOnlineStatus(true); // Now they are fully online
+            newRoom.playersBySignalingId.set(clientId, playerToUpdate);
+        }
+        
+        return newRoom;
     }
 
-    /**
-     * Creates a new Room instance with the same data, allowing React to detect a state change.
-     * @returns A new Room instance.
-     */
+    public addPlayer(playerData: PlayerData): Room {
+        const newRoom = this.clone();
+        if (!Array.from(newRoom.players.values()).some(p => p.signalingId === playerData.signalingId)) {
+            const newPlayer = new Player(playerData);
+            newRoom.players.set(newPlayer.id, newPlayer);
+            if (newPlayer.signalingId) {
+                newRoom.playersBySignalingId.set(newPlayer.signalingId, newPlayer);
+            }
+        }
+        return newRoom;
+    }
+
+    public addPlayers(playersData: PlayerData[]): Room {
+        const newRoom = this.clone();
+        playersData.forEach(playerData => {
+            if (!Array.from(newRoom.players.values()).some(p => p.signalingId === playerData.signalingId)) {
+                const newPlayer = new Player(playerData);
+                newRoom.players.set(newPlayer.id, newPlayer);
+                if (newPlayer.signalingId) {
+                    newRoom.playersBySignalingId.set(newPlayer.signalingId, newPlayer);
+                }
+            }
+        });
+        return newRoom;
+    }
+
+    public setPlayerOnlineStatus(clientId: string, isOnline: boolean): Room {
+        const newRoom = this.clone();
+        const player = newRoom.getPlayerBySignalingId(clientId);
+        if (player) {
+            player.setOnlineStatus(isOnline);
+        }
+        return newRoom;
+    }
+    
+    public addStreamToPlayer(clientId: string, stream: MediaStream): Room {
+        const newRoom = this.clone();
+        const player = newRoom.getPlayerBySignalingId(clientId);
+        if (player) {
+            player.stream = stream;
+        }
+        return newRoom;
+    }
+
+    public removeStreamFromPlayer(clientId: string): Room {
+        const newRoom = this.clone();
+        const player = newRoom.getPlayerBySignalingId(clientId);
+        if (player) {
+            player.stream = undefined;
+            player.setOnlineStatus(false);
+        }
+        return newRoom;
+    }
+
     public clone(): Room {
-        const otherPlayersData = this.otherPlayers.map(p => p.toData());
-        return new Room(this.currentUser.clone(), otherPlayersData);
+        const allPlayersData = this.allPlayers.map(p => p.toData());
+        const currentUserData = allPlayersData.find(p => p.id === this.currentUser.id)!;
+        const otherPlayersData = allPlayersData.filter(p => p.id !== this.currentUser.id);
+        return new Room(new Player(currentUserData), otherPlayersData);
     }
 }
