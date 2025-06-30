@@ -1,9 +1,7 @@
-
-
 import { EventEmitter } from 'events';
 import { Player } from '../models/Player.js';
 import { world } from '../ipc/Minecraft.js';
-import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage, GameSettingDataMessage, PlayerStatusDataMessage, PlayerStatusUpdateBroadcastDataMessage } from '../types/signaling.js';
+import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage, GameSettingDataMessage, PlayerStatusDataMessage, PlayerStatusUpdateBroadcastDataMessage, PlayerPositionUpdateDataMessage, Location, Rotation } from '../types/signaling.js';
 
 const SIGNALING_SERVER_URL = 'ws://localhost:8080';
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -22,6 +20,7 @@ export class SignalingService extends EventEmitter {
   private persistentPeers: Set<string> = new Set();
   private expectingDisconnectFor: Set<string> = new Set();
   private latestGameSettings: { audioRange: number; spectatorVoice: boolean };
+  private tickInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(role: Role, localStream: MediaStream, owner?: Player) {
     super();
@@ -32,8 +31,8 @@ export class SignalingService extends EventEmitter {
     // For a player, this is the state before receiving an update from the owner.
     this.latestGameSettings = { audioRange: 48, spectatorVoice: true };
     
-    if (owner) {
-      this.playerNames.set(owner.signalingId!, owner.name);
+    if (owner && owner.signalingId) {
+      this.playerNames.set(owner.signalingId, owner.name);
     }
   }
 
@@ -43,6 +42,9 @@ export class SignalingService extends EventEmitter {
     this.ws.onopen = () => {
       console.log(`WebSocket connected to ${url}`);
       this.emit('open');
+      if (this.role === 'owner') {
+          this.tickInterval = setInterval(this.handleTick.bind(this), 50);
+      }
     };
     this.ws.onmessage = this.handleMessage.bind(this);
     this.ws.onerror = (err) => console.error('WebSocket error:', err);
@@ -325,6 +327,9 @@ export class SignalingService extends EventEmitter {
                 case 'player-status-update-broadcast':
                     this.emit('player-status-update', (message as PlayerStatusUpdateBroadcastDataMessage).payload);
                     break;
+                case 'player-position-update':
+                    this.emit('player-positions-update', (message as PlayerPositionUpdateDataMessage).payload.players);
+                    break;
             }
         }
     } catch (error) {
@@ -560,6 +565,65 @@ export class SignalingService extends EventEmitter {
     }
   }
 
+  private handleTick() {
+    if (this.role !== 'owner' || !this.clientId) {
+        return;
+    }
+
+    const onlinePlayerIds = [this.clientId, ...Array.from(this.dataChannels.keys())];
+    
+    const allPositions = new Map<string, { position: Location; rotation: Rotation }>();
+    for (const clientId of onlinePlayerIds) {
+        const name = this.playerNames.get(clientId);
+        if (name && world.getPlayerNames().includes(name)) {
+            allPositions.set(clientId, {
+                position: world.getPlayerLocation(name),
+                rotation: world.getPlayerRotation(name),
+            });
+        }
+    }
+
+    if (allPositions.size === 0) return;
+
+    const distanceSq = (pos1: Location, pos2: Location) => {
+        const dx = pos1.x - pos2.x;
+        const dy = pos1.y - pos2.y;
+        const dz = pos1.z - pos2.z;
+        return dx * dx + dy * dy + dz * dz;
+    };
+    
+    const audibleRangeSq = this.latestGameSettings.audioRange * this.latestGameSettings.audioRange;
+
+    for (const receiverId of onlinePlayerIds) {
+        const receiverPosData = allPositions.get(receiverId);
+        if (!receiverPosData) continue;
+
+        const audiblePlayers: { clientId: string; position: Location; rotation: Rotation }[] = [];
+
+        for (const [emitterId, emitterPosData] of allPositions.entries()) {
+            if (distanceSq(receiverPosData.position, emitterPosData.position) <= audibleRangeSq) {
+                audiblePlayers.push({
+                    clientId: emitterId,
+                    position: emitterPosData.position,
+                    rotation: emitterPosData.rotation,
+                });
+            }
+        }
+        
+        if (audiblePlayers.length > 0) {
+            if (receiverId === this.clientId) {
+                this.emit('player-positions-update', audiblePlayers);
+            } else {
+                this.sendDataChannelMessage({
+                    'data-channel-type': 'player-position-update',
+                    payload: { players: audiblePlayers },
+                    senderId: this.clientId,
+                }, receiverId);
+            }
+        }
+    }
+  }
+
   private sendDataChannelMessage(message: DataChannelMessage, targetId?: string) {
     const recipientDataChannel = this.dataChannels.get(targetId || this.ownerId!);
     if (recipientDataChannel && recipientDataChannel.readyState === 'open') {
@@ -602,6 +666,10 @@ export class SignalingService extends EventEmitter {
   }
 
   private cleanup() {
+    if (this.tickInterval) {
+        clearInterval(this.tickInterval);
+        this.tickInterval = null;
+    }
     Array.from(this.peerConnections.keys()).forEach(peerId => this.closePeerConnection(peerId));
     this.peerConnections.clear();
     this.persistentPeers.clear();

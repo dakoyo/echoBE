@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Sidebar } from './Sidebar.js';
 import { PlayerList } from './PlayerList.js';
@@ -9,7 +10,7 @@ import { Room } from '../models/Room.js';
 import { HamburgerIcon } from './icons/HamburgerIcon.js';
 import { world } from '../ipc/Minecraft.js';
 import { SignalingService } from '../services/SignalingService.js';
-import { AuthSuccessMessage, disconnectMessage, PlayerStatusUpdateBroadcastDataMessage } from '../types/signaling.js';
+import { AuthSuccessMessage, disconnectMessage, PlayerStatusUpdateBroadcastDataMessage, Location, Rotation } from '../types/signaling.js';
 import { CopyIcon } from './icons/CopyIcon.js';
 import { CheckIcon } from './icons/CheckIcon.js';
 import { ChatBox, ChatMessage } from './ChatBox.js';
@@ -37,6 +38,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
   const [selectedAudioOutput, setSelectedAudioOutput] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [playerPositions, setPlayerPositions] = useState<Map<string, { position: Location; rotation: Rotation }>>(new Map());
 
   useEffect(() => {
     // This effect handles both the initial room setup and all subsequent
@@ -153,6 +155,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     const handlePlayerStatusUpdate = (payload: PlayerStatusUpdateBroadcastDataMessage['payload']) => {
       setRoom(prevRoom => prevRoom.updatePlayerStatus(payload.clientId, payload.isMuted, payload.isDeafened));
     };
+    
+    const handlePositionsUpdate = (players: { clientId: string; position: Location; rotation: Rotation }[]) => {
+        setPlayerPositions(new Map(players.map(p => [p.clientId, { position: p.position, rotation: p.rotation }])));
+    };
 
     signalingService.on('auth-success', handleAuthSuccess);
     signalingService.on('disconnect', handleDisconnect);
@@ -163,6 +169,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     signalingService.on('new-peer-discovered', handleNewPeer);
     signalingService.on('game-setting-update', handleGameSettingUpdate);
     signalingService.on('player-status-update', handlePlayerStatusUpdate);
+    signalingService.on('player-positions-update', handlePositionsUpdate);
     signalingService.on('error', handleError);
     signalingService.on('room-closed', handleRoomClosed);
 
@@ -177,6 +184,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
       signalingService.off('new-peer-discovered', handleNewPeer);
       signalingService.off('game-setting-update', handleGameSettingUpdate);
       signalingService.off('player-status-update', handlePlayerStatusUpdate);
+      signalingService.off('player-positions-update', handlePositionsUpdate);
       signalingService.off('error', handleError);
       signalingService.off('room-closed', handleRoomClosed);
     };
@@ -316,10 +324,12 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
             <PlayerList 
               room={room}
               currentRole={role}
+              currentUserSignalingId={currentUser.signalingId}
               onKick={handleInitiateKick}
               onVolumeChange={handleVolumeChange}
               selectedAudioOutput={selectedAudioOutput}
               isDeafened={isDeafened}
+              playerPositions={playerPositions}
             />
           </div>
           <div className="flex-shrink-0">

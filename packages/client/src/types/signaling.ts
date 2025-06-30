@@ -1,3 +1,4 @@
+
 export interface RoomCreatedMessage {
     type: 'room-created';
     payload: {
@@ -100,7 +101,20 @@ export type SignalingMessage =
     | disconnectMessage
     | RoomClosedMessage;
 
-// Data Channel Message Types
+// --- Data Channel Message Types ---
+
+// Types for 3D Audio
+export interface Location {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface Rotation {
+  x: number; // pitch
+  y: number; // yaw
+}
+
 interface BaseDataChannelMessage<T, P> {
   'data-channel-type': T;
   payload: P;
@@ -118,6 +132,13 @@ export interface ChatBroadcastDataMessage extends BaseDataChannelMessage<'chat-b
 export interface GameSettingDataMessage extends BaseDataChannelMessage<'game-setting', { audioRange: number; spectatorVoice: boolean }> {}
 export interface PlayerStatusDataMessage extends BaseDataChannelMessage<'player-status', { isMuted: boolean; isDeafened: boolean }> {}
 export interface PlayerStatusUpdateBroadcastDataMessage extends BaseDataChannelMessage<'player-status-update-broadcast', { clientId: string; isMuted: boolean; isDeafened: boolean }> {}
+export interface PlayerPositionUpdateDataMessage extends BaseDataChannelMessage<'player-position-update', {
+    players: {
+        clientId: string;
+        position: Location;
+        rotation: Rotation;
+    }[];
+}> {}
 
 
 export type DataChannelMessage = 
@@ -131,4 +152,5 @@ export type DataChannelMessage =
     | ChatBroadcastDataMessage
     | GameSettingDataMessage
     | PlayerStatusDataMessage
-    | PlayerStatusUpdateBroadcastDataMessage;
+    | PlayerStatusUpdateBroadcastDataMessage
+    | PlayerPositionUpdateDataMessage;

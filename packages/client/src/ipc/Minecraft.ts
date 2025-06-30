@@ -49,7 +49,11 @@ class World {
     ["Alex", { name: "Alex", location: { x: -10, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
   ]);
   private playerCodes: Map<string, string> = new Map(); // playerName -> playerCode
-
+  constructor() {
+    setInterval(() => {
+      this.events.emit("tick")
+    },50)
+  }
   async getOwnerName(): Promise<string> {
     return "Owner"
   }
