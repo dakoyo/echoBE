@@ -1,4 +1,3 @@
-
 export interface RoomCreatedMessage {
     type: 'room-created';
     payload: {
@@ -101,9 +100,7 @@ export type SignalingMessage =
     | disconnectMessage
     | RoomClosedMessage;
 
-// --- Data Channel Message Types ---
-
-// Types for 3D Audio
+// --- 3D Audio Types ---
 export interface Location {
   x: number;
   y: number;
@@ -111,10 +108,23 @@ export interface Location {
 }
 
 export interface Rotation {
-  x: number; // pitch
-  y: number; // yaw
+  x: number; // Pitch
+  y: number; // Yaw
 }
 
+export interface AudioSourceData {
+    name: string;
+    location: Location;
+    rotation: Rotation;
+}
+
+export interface PlayerAudioUpdatePayload {
+    listener: { location: Location; rotation: Rotation };
+    sources: AudioSourceData[];
+}
+
+
+// Data Channel Message Types
 interface BaseDataChannelMessage<T, P> {
   'data-channel-type': T;
   payload: P;
@@ -132,13 +142,7 @@ export interface ChatBroadcastDataMessage extends BaseDataChannelMessage<'chat-b
 export interface GameSettingDataMessage extends BaseDataChannelMessage<'game-setting', { audioRange: number; spectatorVoice: boolean }> {}
 export interface PlayerStatusDataMessage extends BaseDataChannelMessage<'player-status', { isMuted: boolean; isDeafened: boolean }> {}
 export interface PlayerStatusUpdateBroadcastDataMessage extends BaseDataChannelMessage<'player-status-update-broadcast', { clientId: string; isMuted: boolean; isDeafened: boolean }> {}
-export interface PlayerPositionUpdateDataMessage extends BaseDataChannelMessage<'player-position-update', {
-    players: {
-        clientId: string;
-        position: Location;
-        rotation: Rotation;
-    }[];
-}> {}
+export interface PlayerAudioUpdateDataMessage extends BaseDataChannelMessage<'player-audio-update', PlayerAudioUpdatePayload> {}
 
 
 export type DataChannelMessage = 
@@ -153,4 +157,4 @@ export type DataChannelMessage =
     | GameSettingDataMessage
     | PlayerStatusDataMessage
     | PlayerStatusUpdateBroadcastDataMessage
-    | PlayerPositionUpdateDataMessage;
+    | PlayerAudioUpdateDataMessage;

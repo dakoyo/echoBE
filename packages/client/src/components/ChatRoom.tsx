@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Sidebar } from './Sidebar.js';
 import { PlayerList } from './PlayerList.js';
@@ -10,7 +9,7 @@ import { Room } from '../models/Room.js';
 import { HamburgerIcon } from './icons/HamburgerIcon.js';
 import { world } from '../ipc/Minecraft.js';
 import { SignalingService } from '../services/SignalingService.js';
-import { AuthSuccessMessage, disconnectMessage, PlayerStatusUpdateBroadcastDataMessage, Location, Rotation } from '../types/signaling.js';
+import { AuthSuccessMessage, disconnectMessage, PlayerAudioUpdatePayload, PlayerStatusUpdateBroadcastDataMessage } from '../types/signaling.js';
 import { CopyIcon } from './icons/CopyIcon.js';
 import { CheckIcon } from './icons/CheckIcon.js';
 import { ChatBox, ChatMessage } from './ChatBox.js';
@@ -38,7 +37,27 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
   const [selectedAudioOutput, setSelectedAudioOutput] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [playerPositions, setPlayerPositions] = useState<Map<string, { position: Location; rotation: Rotation }>>(new Map());
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [audioPositions, setAudioPositions] = useState<PlayerAudioUpdatePayload | null>(null);
+
+  // Create and manage the single AudioContext for the application
+  useEffect(() => {
+    const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+    setAudioContext(context);
+    
+    return () => {
+      context.close();
+    };
+  }, []);
+
+  // Update audio output device for the entire context
+  useEffect(() => {
+    if (audioContext && selectedAudioOutput && (audioContext as any).setSinkId) {
+      (audioContext as any).setSinkId(selectedAudioOutput)
+        .catch((err: any) => console.error("Failed to set audio context sink", err));
+    }
+  }, [audioContext, selectedAudioOutput]);
+
 
   useEffect(() => {
     // This effect handles both the initial room setup and all subsequent
@@ -77,6 +96,45 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
       }
     };
     initialSync();
+
+    const handlePlayerAudioUpdate = (payload: PlayerAudioUpdatePayload) => {
+        setAudioPositions(payload);
+        if (audioContext && payload.listener) {
+            const listener = audioContext.listener;
+            const { location, rotation } = payload.listener;
+
+            // Update Listener Position
+            if (listener.positionX) {
+                listener.positionX.setValueAtTime(location.x, audioContext.currentTime);
+                listener.positionY.setValueAtTime(location.y, audioContext.currentTime);
+                listener.positionZ.setValueAtTime(location.z, audioContext.currentTime);
+            } else {
+                listener.setPosition(location.x, location.y, location.z);
+            }
+
+            // Update Listener Orientation
+            const theta = (270 - rotation.y) * Math.PI / 180;
+            const pitch = rotation.x * Math.PI / 180;
+            
+            const fwdX = Math.cos(pitch) * Math.cos(theta);
+            const fwdY = -Math.sin(pitch);
+            const fwdZ = -Math.cos(pitch) * Math.sin(theta);
+            const upX = 0;
+            const upY = 1;
+            const upZ = 0;
+            
+            if (listener.forwardX) {
+                listener.forwardX.setValueAtTime(fwdX, audioContext.currentTime);
+                listener.forwardY.setValueAtTime(fwdY, audioContext.currentTime);
+                listener.forwardZ.setValueAtTime(fwdZ, audioContext.currentTime);
+                listener.upX.setValueAtTime(upX, audioContext.currentTime);
+                listener.upY.setValueAtTime(upY, audioContext.currentTime);
+                listener.upZ.setValueAtTime(upZ, audioContext.currentTime);
+            } else {
+                listener.setOrientation(fwdX, fwdY, fwdZ, upX, upY, upZ);
+            }
+        }
+    };
 
     // Owner learns about a new player connecting
     const handleAuthSuccess = ({ clientId, playerName }: AuthSuccessMessage['payload']) => {
@@ -155,10 +213,6 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     const handlePlayerStatusUpdate = (payload: PlayerStatusUpdateBroadcastDataMessage['payload']) => {
       setRoom(prevRoom => prevRoom.updatePlayerStatus(payload.clientId, payload.isMuted, payload.isDeafened));
     };
-    
-    const handlePositionsUpdate = (players: { clientId: string; position: Location; rotation: Rotation }[]) => {
-        setPlayerPositions(new Map(players.map(p => [p.clientId, { position: p.position, rotation: p.rotation }])));
-    };
 
     signalingService.on('auth-success', handleAuthSuccess);
     signalingService.on('disconnect', handleDisconnect);
@@ -169,7 +223,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     signalingService.on('new-peer-discovered', handleNewPeer);
     signalingService.on('game-setting-update', handleGameSettingUpdate);
     signalingService.on('player-status-update', handlePlayerStatusUpdate);
-    signalingService.on('player-positions-update', handlePositionsUpdate);
+    signalingService.on('player-audio-update', handlePlayerAudioUpdate);
     signalingService.on('error', handleError);
     signalingService.on('room-closed', handleRoomClosed);
 
@@ -184,11 +238,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
       signalingService.off('new-peer-discovered', handleNewPeer);
       signalingService.off('game-setting-update', handleGameSettingUpdate);
       signalingService.off('player-status-update', handlePlayerStatusUpdate);
-      signalingService.off('player-positions-update', handlePositionsUpdate);
+      signalingService.off('player-audio-update', handlePlayerAudioUpdate);
       signalingService.off('error', handleError);
       signalingService.off('room-closed', handleRoomClosed);
     };
-  }, [signalingService, currentUser, role, onLeave]);
+  }, [signalingService, currentUser, role, onLeave, audioContext]);
 
   // Effect for Owner to broadcast setting changes
   useEffect(() => {
@@ -324,12 +378,12 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
             <PlayerList 
               room={room}
               currentRole={role}
-              currentUserSignalingId={currentUser.signalingId}
               onKick={handleInitiateKick}
               onVolumeChange={handleVolumeChange}
               selectedAudioOutput={selectedAudioOutput}
               isDeafened={isDeafened}
-              playerPositions={playerPositions}
+              audioContext={audioContext}
+              audioPositions={audioPositions}
             />
           </div>
           <div className="flex-shrink-0">

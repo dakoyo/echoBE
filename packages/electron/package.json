@@ -1,0 +1,18 @@
+{
+  "name": "electron",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "commonjs",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^36.5.0",
+    "electron-builder": "^26.0.12",
+    "electron-is-dev": "^3.0.1"
+  },
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "dev": "cd ../client && yarn build && cd ../electron && electron ."
+  },
+  "devDependencies": {}
+}

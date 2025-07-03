@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { Role } from '../App.js';
 import { Player } from '../models/Player.js';
 import { Room } from '../models/Room.js';
@@ -8,17 +8,17 @@ import { KickIcon } from './icons/KickIcon.js';
 import { MicIcon } from './icons/MicIcon.js';
 import { VolumeIcon } from './icons/VolumeIcon.js';
 import { HeadphonesIcon } from './icons/HeadphonesIcon.js';
-import type { Location, Rotation } from '../types/signaling.js';
+import { Location, PlayerAudioUpdatePayload, AudioSourceData } from '../types/signaling.js';
 
 interface PlayerListProps {
   room: Room;
   currentRole: Role;
-  currentUserSignalingId?: string;
   onKick: (player: Player) => void;
   onVolumeChange: (player: Player, volume: number) => void;
   selectedAudioOutput: string;
   isDeafened: boolean;
-  playerPositions: Map<string, { position: Location; rotation: Rotation }>;
+  audioContext: AudioContext | null;
+  audioPositions: PlayerAudioUpdatePayload | null;
 }
 
 const PlayerItem: React.FC<{
@@ -72,185 +72,129 @@ const PlayerItem: React.FC<{
     );
 }
 
-export const PlayerList: React.FC<PlayerListProps> = ({
-  room,
-  currentRole,
-  currentUserSignalingId,
-  onKick,
-  onVolumeChange,
-  selectedAudioOutput,
-  isDeafened,
-  playerPositions,
-}) => {
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioNodesRef = useRef<Map<string, { source: MediaStreamAudioSourceNode; panner: PannerNode; gain: GainNode }>>(new Map());
-  const masterGainRef = useRef<GainNode | null>(null);
+const PlayerAudio: React.FC<{ 
+  stream: MediaStream; 
+  outputId: string; // Used for fallback sinkId
+  volume: number;
+  isDeafened: boolean;
+  audioContext: AudioContext | null;
+  isAudible: boolean;
+  sourceLocation?: Location;
+}> = ({ stream, outputId, volume, isDeafened, audioContext, isAudible, sourceLocation }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const pannerNodeRef = useRef<PannerNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const isSetup = useRef(false);
 
-  // Initialize AudioContext
   useEffect(() => {
-    if (!audioContextRef.current) {
-        const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-        audioContextRef.current = context;
-        const masterGain = context.createGain();
-        masterGain.connect(context.destination);
-        masterGainRef.current = masterGain;
+    if (!audioContext || !stream || isSetup.current) return;
+
+    const source = audioContext.createMediaStreamSource(stream);
+    const panner = audioContext.createPanner();
+    const gain = audioContext.createGain();
+
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 1;
+    panner.maxDistance = 10000;
+    panner.rolloffFactor = 1;
+    panner.coneInnerAngle = 360;
+    panner.coneOuterAngle = 360;
+    panner.coneOuterGain = 0;
+
+    source.connect(panner).connect(gain).connect(audioContext.destination);
+
+    sourceNodeRef.current = source;
+    pannerNodeRef.current = panner;
+    gainNodeRef.current = gain;
+    isSetup.current = true;
+    
+    // The audio element is needed as a fallback for setSinkId on older browsers
+    // We play it but keep it muted, as the sound comes from the Web Audio API graph.
+    if (audioRef.current) {
+        audioRef.current.srcObject = stream;
+        audioRef.current.play().catch(e => console.warn("Audio play failed, user may need to interact.", e));
+        audioRef.current.muted = true;
     }
 
     return () => {
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close().catch(console.error);
-        audioContextRef.current = null;
-      }
-      audioNodesRef.current.forEach(({ source, panner, gain }) => {
-        try {
-            source?.disconnect();
-            panner?.disconnect();
-            gain?.disconnect();
-        } catch(e) { /* ignore cleanup errors */ }
-      });
-      audioNodesRef.current.clear();
-    };
-  }, []);
-  
-  // Handle output device changes
-  useEffect(() => {
-    const audioContext = audioContextRef.current;
-    if (audioContext && selectedAudioOutput && typeof (audioContext as any).setSinkId === 'function') {
-        (audioContext as any).setSinkId(selectedAudioOutput)
-            .catch((err: any) => console.error("Error setting sink ID for AudioContext:", err));
+        source?.disconnect();
+        panner?.disconnect();
+        gain?.disconnect();
+        isSetup.current = false;
+        sourceNodeRef.current = null;
+        pannerNodeRef.current = null;
+        gainNodeRef.current = null;
     }
-  }, [selectedAudioOutput]);
+  }, [audioContext, stream]);
 
-  // Handle master gain (deafen)
   useEffect(() => {
-      if(masterGainRef.current && audioContextRef.current) {
-          masterGainRef.current.gain.setValueAtTime(isDeafened ? 0 : 1, audioContextRef.current.currentTime);
-      }
-  }, [isDeafened]);
+      if (!audioContext || !pannerNodeRef.current || !gainNodeRef.current) return;
+      
+      const panner = pannerNodeRef.current;
+      const gain = gainNodeRef.current;
 
-  // Effect to manage audio nodes based on players with streams
-  useEffect(() => {
-    const audioContext = audioContextRef.current;
-    if (!audioContext || !masterGainRef.current) return;
-    
-    const currentNodes = audioNodesRef.current;
-    const playersWithStreams = new Set(room.otherPlayers.filter(p => p.stream && p.signalingId).map(p => p.signalingId!));
+      const targetGain = (isDeafened || !isAudible) ? 0 : volume / 100;
+      gain.gain.setTargetAtTime(targetGain, audioContext.currentTime, 0.01);
 
-    // Add new players' audio nodes
-    playersWithStreams.forEach(signalingId => {
-      if (!currentNodes.has(signalingId)) {
-        const player = room.getPlayerBySignalingId(signalingId);
-        if (player?.stream) {
-          try {
-            const source = audioContext.createMediaStreamSource(player.stream);
-            const panner = new PannerNode(audioContext, {
-              panningModel: 'HRTF',
-              distanceModel: 'inverse',
-              refDistance: 1,
-              maxDistance: 10000,
-              rolloffFactor: 1,
-              coneInnerAngle: 360,
-              coneOuterAngle: 360,
-              coneOuterGain: 0,
-            });
-            const gain = audioContext.createGain();
-            
-            source.connect(panner).connect(gain).connect(masterGainRef.current!);
-            currentNodes.set(signalingId, { source, panner, gain });
-          } catch (e) {
-            console.error(`Error creating audio node for ${player.name}:`, e);
-          }
+      if (sourceLocation) {
+        if (panner.positionX) {
+            panner.positionX.setValueAtTime(sourceLocation.x, audioContext.currentTime);
+            panner.positionY.setValueAtTime(sourceLocation.y, audioContext.currentTime);
+            panner.positionZ.setValueAtTime(sourceLocation.z, audioContext.currentTime);
+        } else {
+            panner.setPosition(sourceLocation.x, sourceLocation.y, sourceLocation.z);
         }
       }
-    });
+  }, [audioContext, isAudible, isDeafened, volume, sourceLocation]);
 
-    // Remove old players' audio nodes
-    currentNodes.forEach((nodes, signalingId) => {
-      if (!playersWithStreams.has(signalingId)) {
-        nodes.source.disconnect();
-        nodes.panner.disconnect();
-        nodes.gain.disconnect();
-        currentNodes.delete(signalingId);
-      }
-    });
-
-  }, [room]);
-
-  // Effect to update positions and volumes
   useEffect(() => {
-    const audioContext = audioContextRef.current;
-    if (!audioContext || audioContext.state === 'suspended') {
-      audioContext?.resume().catch(console.error);
+    // Fallback for browsers that don't support audioContext.setSinkId
+    if (audioRef.current && outputId && typeof (audioRef.current as any).setSinkId === 'function') {
+      (audioRef.current as any).setSinkId(outputId)
+        .catch((err: any) => {
+          console.warn('Error setting sink ID on audio element:', err);
+        });
     }
-    if (!audioContext || playerPositions.size === 0 || audioContext.state !== 'running') return;
+  }, [outputId]);
 
-    // Update listener position and orientation
-    const listenerData = currentUserSignalingId ? playerPositions.get(currentUserSignalingId) : undefined;
-    if (listenerData) {
-      const { position, rotation } = listenerData;
-      const { listener } = audioContext;
+  return <audio ref={audioRef} playsInline muted style={{ display: 'none' }} />;
+};
 
-      // New API for setting position
-      if (listener.positionX) {
-        listener.positionX.setValueAtTime(position.x, audioContext.currentTime);
-        listener.positionY.setValueAtTime(position.y, audioContext.currentTime);
-        listener.positionZ.setValueAtTime(position.z, audioContext.currentTime);
-      } else { // Fallback for older browsers
-        (listener as any).setPosition(position.x, position.y, position.z);
-      }
-      
-      const yaw = rotation.y * (Math.PI / 180); // To radians
-      const pitch = rotation.x * (Math.PI / 180); // To radians
-      
-      const fwdX = Math.sin(yaw) * Math.cos(pitch);
-      const fwdY = -Math.sin(pitch);
-      const fwdZ = -Math.cos(yaw) * Math.cos(pitch);
+export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKick, onVolumeChange, selectedAudioOutput, isDeafened, audioContext, audioPositions }) => {
+  const audiblePlayerNames = useMemo(() => 
+    new Set(audioPositions?.sources.map(s => s.name) ?? [])
+  , [audioPositions]);
 
-      const upX = Math.sin(yaw) * Math.sin(pitch);
-      const upY = Math.cos(pitch);
-      const upZ = -Math.cos(yaw) * Math.sin(pitch);
-      
-      // New API for setting orientation
-      if (listener.forwardX) {
-        listener.forwardX.setValueAtTime(fwdX, audioContext.currentTime);
-        listener.forwardY.setValueAtTime(fwdY, audioContext.currentTime);
-        listener.forwardZ.setValueAtTime(fwdZ, audioContext.currentTime);
-        listener.upX.setValueAtTime(upX, audioContext.currentTime);
-        listener.upY.setValueAtTime(upY, audioContext.currentTime);
-        listener.upZ.setValueAtTime(upZ, audioContext.currentTime);
-      } else { // Fallback for older browsers
-        (listener as any).setOrientation(fwdX, fwdY, fwdZ, upX, upY, upZ);
-      }
-    }
-
-    // Update player (panner) positions and volumes
-    playerPositions.forEach(({ position }, signalingId) => {
-        if (signalingId !== currentUserSignalingId) {
-            const nodes = audioNodesRef.current.get(signalingId);
-            const player = room.getPlayerBySignalingId(signalingId);
-            if (nodes && player) {
-                nodes.panner.positionX.setValueAtTime(position.x, audioContext.currentTime);
-                nodes.panner.positionY.setValueAtTime(position.y, audioContext.currentTime);
-                nodes.panner.positionZ.setValueAtTime(position.z, audioContext.currentTime);
-                // Volume from player is 0-150. We map it to a gain value (100 -> 1.0).
-                nodes.gain.gain.setValueAtTime(player.volume / 100, audioContext.currentTime);
-            }
-        }
-    });
-
-  }, [playerPositions, currentUserSignalingId, room]);
-  
   return (
     <div className="space-y-3">
-      {room.otherPlayers.map(player => (
-        <PlayerItem 
-          key={player.id}
-          player={player}
-          canKick={currentRole === 'owner'}
-          onKick={() => onKick(player)}
-          onVolumeChange={(volume) => onVolumeChange(player, volume)}
-        />
-      ))}
+      {room.otherPlayers.map(player => {
+        const sourceData = audioPositions?.sources.find(s => s.name === player.name);
+        const isAudible = audiblePlayerNames.has(player.name);
+
+        return (
+            <React.Fragment key={player.id}>
+                <PlayerItem 
+                    player={player}
+                    canKick={currentRole === 'owner'}
+                    onKick={() => onKick(player)}
+                    onVolumeChange={(volume) => onVolumeChange(player, volume)}
+                />
+                {player.stream && audioContext && (
+                  <PlayerAudio
+                    stream={player.stream} 
+                    outputId={selectedAudioOutput} 
+                    volume={player.volume}
+                    isDeafened={isDeafened}
+                    audioContext={audioContext}
+                    isAudible={isAudible}
+                    sourceLocation={sourceData?.location}
+                  />
+                )}
+            </React.Fragment>
+        );
+      })}
     </div>
   );
 };
