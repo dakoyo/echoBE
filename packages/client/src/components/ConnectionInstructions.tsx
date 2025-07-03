@@ -62,16 +62,13 @@ export const ConnectionInstructions: React.FC<ConnectionInstructionsProps> = ({ 
           
           <div className="text-left mb-8">
             <p className="text-lg text-[#E0E0E0] mb-2">Minecraftでサーバーに接続:</p>
-            <p className="text-sm text-[#A9A9A9] mb-2">ゲーム内で「サーバーを追加」または「直接接続」を選び、以下のコマンドを入力してください。</p>
+            <p className="text-sm text-[#A9A9A9] mb-2">ゲーム内で次のコマンドを入力してください</p>
             <CodeBlock text={connectCommand} onCopy={handleCopy} copied={connectCopied} />
           </div>
 
           <div className="mt-8">
             <p className="text-lg text-[#A9A9A9] mt-3 animate-pulse">
               Minecraftからの接続を待っています...
-            </p>
-            <p className="text-xs text-[#545454] mt-4">
-              (開発者ツールで `skipConnection()` を実行してスキップできます)
             </p>
           </div>
 

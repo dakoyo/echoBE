@@ -143,6 +143,14 @@ ipcMain.handle("sendMessage", async (event, message: string, playerName?: string
     }
 });
 
+ipcMain.handle("get-local-player-name", async () => {
+    if (!localPlayer) {
+        console.warn("Local player is not initialized.");
+        return '';
+    }
+    return localPlayer.name;
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

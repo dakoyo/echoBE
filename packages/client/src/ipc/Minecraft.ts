@@ -60,6 +60,11 @@ class World {
 
   constructor() {
     setInterval(() => this.events.emit('tick'), 50);
+    
+    // Simulate player join/leave for testing purposes.
+    // In a real application, these would be triggered by the game.
+    setTimeout(() => this.events.emit('playerJoin', { playerName: 'Notch' }), 15000);
+    setTimeout(() => this.events.emit('playerLeave', { playerName: 'Alex' }), 25000);
   }
 
   async getOwnerName(): Promise<string> {
@@ -68,6 +73,17 @@ class World {
 
   getPlayerNames(): string[] {
     return Array.from(this.players.keys());
+  }
+
+  addPlayer(playerName: string): void {
+    if (this.players.has(playerName)) return;
+    this.players.set(playerName, {
+      name: playerName,
+      location: { x: (Math.random() - 0.5) * 30, y: 0, z: (Math.random() - 0.5) * 30 },
+      rotation: { x: 0, y: 0 },
+      isSpectator: false,
+    });
+    console.log(`[Minecraft Mock] Player ${playerName} joined the world.`);
   }
 
   removePlayer(playerName: string): void {
@@ -135,14 +151,24 @@ class World {
    * @param playerName - 送信するプレイヤーの名前（undefinedならワールド全体に送信される）
    */
   sendMessage(message: string, playerName?: string) {
-    if (playerName) {
-        console.log(`[Sent to ${playerName}]:\n${message}`);
-    } else {
-        console.log(`[Sent to all]:\n${message}`);
-    }
+    window.electronAPI.sendMessage(message, playerName);
+    console.log(`[Minecraft Mock] Message sent: ${message} (from ${playerName || 'world'})`);
   }
 
   events = new WorldEventEmitter();
 }
 
 export const world = new World();
+
+window.electronAPI.onPlayerJoin((ev) => {
+  world.events.emit('playerJoin', ev);
+});
+window.electronAPI.onPlayerLeave((ev) => {
+  world.events.emit('playerLeave', ev);
+});
+window.electronAPI.onTick(() => {
+  world.events.emit('tick');
+});
+window.electronAPI.onWorldConnected(() => {
+  world.events.emit('worldConnected');
+});

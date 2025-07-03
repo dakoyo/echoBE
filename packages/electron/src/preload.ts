@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
             callback({ playerName });
         });
     },
+
+    getLocalPlayerName: async () => {
+        return await ipcRenderer.invoke("get-local-player-name");
+    },
     onPlayerLeave: (callback: (ev: { playerName: string }) => void) => {
         ipcRenderer.on("playerLeave", (event, playerName) => {
             callback({ playerName });
