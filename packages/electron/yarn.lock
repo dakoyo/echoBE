@@ -172,6 +172,18 @@
     lodash "^4.17.15"
     tmp-promise "^3.0.2"
 
+"@minecraft/common@^1.1.0":
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/@minecraft/common/-/common-1.2.0.tgz#a00d4130dcd5084dfd30e85e108c6d58eae8358b"
+  integrity sha512-JdmEq4P3Z/FtoBzhLijFgMSVFnFRrUoLwY8DHHrgtFo0mfLTOLTB1RErYjLMsA6b7BGVNxkX/pfFRiH7QZ0XwQ==
+
+"@minecraft/server@1.18.0":
+  version "1.18.0"
+  resolved "https://registry.yarnpkg.com/@minecraft/server/-/server-1.18.0.tgz#4cd30a9a361cd60a5b3fccb2ceb94e89bcaf31da"
+  integrity sha512-X3HKKezj3ZeUCBay6FJOtUq56rq8fnYRpgKaW7PgRcOJyIaLatuq/Ml01mQdUtxlKdMxZdkDS3w0SnENVfaudA==
+  dependencies:
+    "@minecraft/common" "^1.1.0"
+
 "@npmcli/fs@^2.1.0":
   version "2.1.2"
   resolved "https://registry.yarnpkg.com/@npmcli/fs/-/fs-2.1.2.tgz#a9e2541a4a2fec2e69c29b35e6060973da79b865"
@@ -192,6 +204,11 @@
   version "0.11.0"
   resolved "https://registry.yarnpkg.com/@pkgjs/parseargs/-/parseargs-0.11.0.tgz#a77ea742fab25775145434eb1d2328cf5013ac33"
   integrity sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==
+
+"@serenityjs/emitter@^0.5.2":
+  version "0.5.2"
+  resolved "https://registry.yarnpkg.com/@serenityjs/emitter/-/emitter-0.5.2.tgz#d91d8d4033cb45b14e65812778ca7e75853de234"
+  integrity sha512-x+tYqmCbOzSI0wo/0t6Scj5OU883RtTUZ6b0jfhymO0E5GEF1RkWI/4eEGcHUWMtuFDbPtb2pQynPNbt4R4XCQ==
 
 "@sindresorhus/is@^4.0.0":
   version "4.6.0"
@@ -2011,6 +2028,15 @@ smart-buffer@^4.0.2, smart-buffer@^4.2.0:
   resolved "https://registry.yarnpkg.com/smart-buffer/-/smart-buffer-4.2.0.tgz#6e1d71fa4f18c05f7d0ff216dd16a481d0e8d9ae"
   integrity sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg==
 
+socket-be@^2.1.0:
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/socket-be/-/socket-be-2.1.0.tgz#aa3b7c0b815d069eace8385b7d7c9f2176903182"
+  integrity sha512-YRz6GCUTOV/YO3rZ0WXuYszRGEA/sVvEBHN62shU1C3SG5q1NocrYrTknannON51H/0kyoboZ24aMZr/fatULw==
+  dependencies:
+    "@minecraft/server" "1.18.0"
+    "@serenityjs/emitter" "^0.5.2"
+    ws "^8.18.0"
+
 socks-proxy-agent@^7.0.0:
   version "7.0.0"
   resolved "https://registry.yarnpkg.com/socks-proxy-agent/-/socks-proxy-agent-7.0.0.tgz#dc069ecf34436621acb41e3efa66ca1b5fed15b6"
@@ -2288,6 +2314,11 @@ wrappy@1:
   version "1.0.2"
   resolved "https://registry.yarnpkg.com/wrappy/-/wrappy-1.0.2.tgz#b5243d8f3ec1aa35f1364605bc0d1036e30ab69f"
   integrity sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==
+
+ws@^8.18.0:
+  version "8.18.3"
+  resolved "https://registry.yarnpkg.com/ws/-/ws-8.18.3.tgz#b56b88abffde62791c639170400c93dcb0c95472"
+  integrity sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==
 
 xmlbuilder@>=11.0.1, xmlbuilder@^15.1.1:
   version "15.1.1"

@@ -22,12 +22,13 @@ interface PlayerData {
   name: string;
   location: PlayerLocation;
   rotation: PlayerRotation;
+  isSpectator: boolean;
 }
 
 // イベント定義
 interface WorldEvents {
-  playersJoin: (playerNames: string[]) => void; // プレイヤーがマインクラフトに入った時に発火する
-  playersLeave: (playerNames: string[]) => void; // プレイヤーがマインクラフトから出た時に発火する
+  playerJoin: (playerName: string) => void; // プレイヤーがマインクラフトに入った時に発火する
+  playerLeave: (playerName: string) => void; // プレイヤーがマインクラフトから出た時に発火する
   tick: () => void; // マインクラフト内の1tick（0.05秒）ごとに発火する
   worldConnected: () => void; // /connect localhost:3000などのコマンドがマインクラフト内で入力され、webSocket接続が確立された時に発火する
   codeRequest: (playerName: string) => void // プレイヤーコードを生成するようにリクエストされた時に発火
@@ -45,14 +46,13 @@ class WorldEventEmitter extends EventEmitter {
 
 class World {
   private players: Map<string, PlayerData> = new Map([
-    ["Owner", { name: "Owner", location: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
-    ["Steve", { name: "Steve", location: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
-    ["Alex", { name: "Alex", location: { x: -10, y: 0, z: 0 }, rotation: { x: 0, y: 0 } }],
+    ["Owner", { name: "Owner", location: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0 } , isSpectator: false}],
+    ["Steve", { name: "Steve", location: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0 }, isSpectator: false }],
+    ["Alex", { name: "Alex", location: { x: -10, y: 0, z: 0 }, rotation: { x: 0, y: 0 }, isSpectator: true }],
   ]);
   private playerCodes: Map<string, string> = new Map(); // playerName -> playerCode
 
   constructor() {
-    // Simulate the tick event for 3D audio updates
     setInterval(() => this.events.emit('tick'), 50);
   }
 
@@ -111,15 +111,6 @@ class World {
     } else {
         console.log(`[Sent to all]:\n${message}`);
     }
-  }
-
-  addPlayer(name: string, location?: PlayerLocation, rotation?: PlayerRotation): void {
-    this.players.set(name, {
-      name,
-      location: location || { x: 0, y: 0, z: 0 },
-      rotation: rotation || { x: 0, y: 0 }
-    });
-    this.events.emit('playersJoin', [name]);
   }
 
   events = new WorldEventEmitter();

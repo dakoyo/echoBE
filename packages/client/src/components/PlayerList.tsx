@@ -1,5 +1,4 @@
-
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Role } from '../App.js';
 import { Player } from '../models/Player.js';
 import { Room } from '../models/Room.js';
@@ -8,7 +7,7 @@ import { KickIcon } from './icons/KickIcon.js';
 import { MicIcon } from './icons/MicIcon.js';
 import { VolumeIcon } from './icons/VolumeIcon.js';
 import { HeadphonesIcon } from './icons/HeadphonesIcon.js';
-import { Location, PlayerAudioUpdatePayload, AudioSourceData } from '../types/signaling.js';
+import { Location, PlayerAudioUpdatePayload } from '../types/signaling.js';
 
 interface PlayerListProps {
   room: Room;
@@ -19,6 +18,7 @@ interface PlayerListProps {
   isDeafened: boolean;
   audioContext: AudioContext | null;
   audioPositions: PlayerAudioUpdatePayload | null;
+  audibleRange: number;
 }
 
 const PlayerItem: React.FC<{
@@ -26,11 +26,13 @@ const PlayerItem: React.FC<{
   canKick: boolean;
   onKick: () => void;
   onVolumeChange: (volume: number) => void;
-}> = ({ player, canKick, onKick, onVolumeChange }) => {
+  isSpeaking: boolean;
+}> = ({ player, canKick, onKick, onVolumeChange, isSpeaking }) => {
     const isOffline = !player.isOnline;
+    const speakingClasses = isSpeaking ? 'ring-2 ring-green-400' : '';
     
     return (
-        <div className={`flex flex-col bg-[#3C3C3C] p-3 gap-3 border-2 border-t-[#545454] border-l-[#545454] border-b-[#272727] border-r-[#272727] transition-opacity ${isOffline ? 'opacity-50' : ''}`}>
+        <div className={`flex flex-col bg-[#3C3C3C] p-3 gap-3 border-2 border-t-[#545454] border-l-[#545454] border-b-[#272727] border-r-[#272727] transition-all duration-200 ${isOffline ? 'opacity-50' : ''} ${speakingClasses}`}>
             {/* Top Row: Name and Owner Icon */}
             <div className="flex items-center">
                 <div className={`w-3 h-3 rounded-full mr-3 flex-shrink-0 border-2 border-black ${player.isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></div>
@@ -41,18 +43,19 @@ const PlayerItem: React.FC<{
             </div>
             
             {/* Bottom Row: Controls */}
-            <div className="flex items-center gap-3 md:gap-4">
+            <div className="flex items-center gap-2 md:gap-3">
                 <VolumeIcon className="w-6 h-6 text-gray-400 flex-shrink-0" />
                 <input
                     type="range"
                     min="0"
-                    max="150"
+                    max="200"
                     value={player.volume}
                     onChange={(e) => onVolumeChange(Number(e.target.value))}
                     className="flex-grow w-full"
                     aria-label={`${player.name}の音量`}
                     disabled={isOffline}
                 />
+                <span className={`text-sm font-mono w-12 text-right ${isOffline ? 'text-gray-400' : 'text-white'}`}>{player.volume}%</span>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <MicIcon className={`w-6 h-6 ${player.isMuted ? 'text-red-500' : 'text-gray-400'}`} muted={player.isMuted}/>
                     <HeadphonesIcon className={`w-6 h-6 ${player.isDeafened ? 'text-red-500' : 'text-gray-400'}`} muted={player.isDeafened}/>
@@ -74,18 +77,25 @@ const PlayerItem: React.FC<{
 
 const PlayerAudio: React.FC<{ 
   stream: MediaStream; 
-  outputId: string; // Used for fallback sinkId
+  outputId: string;
   volume: number;
   isDeafened: boolean;
   audioContext: AudioContext | null;
-  isAudible: boolean;
   sourceLocation?: Location;
-}> = ({ stream, outputId, volume, isDeafened, audioContext, isAudible, sourceLocation }) => {
+  onSpeakingChange: (isSpeaking: boolean) => void;
+  audibleRange: number;
+}> = ({ stream, outputId, volume, isDeafened, audioContext, sourceLocation, onSpeakingChange, audibleRange }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const pannerNodeRef = useRef<PannerNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
+  const analyserNodeRef = useRef<AnalyserNode | null>(null);
   const isSetup = useRef(false);
+  const onSpeakingChangeRef = useRef(onSpeakingChange);
+
+  useEffect(() => {
+    onSpeakingChangeRef.current = onSpeakingChange;
+  });
 
   useEffect(() => {
     if (!audioContext || !stream || isSetup.current) return;
@@ -93,21 +103,25 @@ const PlayerAudio: React.FC<{
     const source = audioContext.createMediaStreamSource(stream);
     const panner = audioContext.createPanner();
     const gain = audioContext.createGain();
+    const analyser = audioContext.createAnalyser();
+
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.3;
 
     panner.panningModel = 'HRTF';
     panner.distanceModel = 'inverse';
     panner.refDistance = 1;
     panner.maxDistance = 10000;
-    panner.rolloffFactor = 1;
     panner.coneInnerAngle = 360;
     panner.coneOuterAngle = 360;
     panner.coneOuterGain = 0;
 
-    source.connect(panner).connect(gain).connect(audioContext.destination);
+    source.connect(analyser).connect(panner).connect(gain).connect(audioContext.destination);
 
     sourceNodeRef.current = source;
     pannerNodeRef.current = panner;
     gainNodeRef.current = gain;
+    analyserNodeRef.current = analyser;
     isSetup.current = true;
     
     // The audio element is needed as a fallback for setSinkId on older browsers
@@ -120,12 +134,14 @@ const PlayerAudio: React.FC<{
 
     return () => {
         source?.disconnect();
+        analyser?.disconnect();
         panner?.disconnect();
         gain?.disconnect();
         isSetup.current = false;
         sourceNodeRef.current = null;
         pannerNodeRef.current = null;
         gainNodeRef.current = null;
+        analyserNodeRef.current = null;
     }
   }, [audioContext, stream]);
 
@@ -135,8 +151,14 @@ const PlayerAudio: React.FC<{
       const panner = pannerNodeRef.current;
       const gain = gainNodeRef.current;
 
-      const targetGain = (isDeafened || !isAudible) ? 0 : volume / 100;
+      const targetGain = isDeafened ? 0 : volume / 100;
       gain.gain.setTargetAtTime(targetGain, audioContext.currentTime, 0.01);
+
+      // We want volume to be ~5% at the edge of the audibleRange.
+      // This is achieved by tuning the rolloffFactor of the inverse distance model.
+      // rolloffFactor = 19 / (audibleRange - 1)
+      const safeAudibleRange = Math.max(1.1, audibleRange);
+      panner.rolloffFactor = 19 / (safeAudibleRange - 1);
 
       if (sourceLocation) {
         if (panner.positionX) {
@@ -147,7 +169,53 @@ const PlayerAudio: React.FC<{
             panner.setPosition(sourceLocation.x, sourceLocation.y, sourceLocation.z);
         }
       }
-  }, [audioContext, isAudible, isDeafened, volume, sourceLocation]);
+  }, [audioContext, isDeafened, volume, sourceLocation, audibleRange]);
+
+  useEffect(() => {
+    if (!analyserNodeRef.current || isDeafened) {
+        return;
+    }
+
+    const analyser = analyserNodeRef.current;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    let isSpeaking = false;
+    let lastSpokeTime = 0;
+    let animationFrameId: number;
+    
+    const speakingThreshold = 20; // Heuristic value
+    const silenceDelay = 300; // ms
+
+    const checkSpeaking = () => {
+        if (!analyserNodeRef.current) return;
+        
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length;
+        
+        if (average > speakingThreshold) {
+            lastSpokeTime = Date.now();
+            if (!isSpeaking) {
+                isSpeaking = true;
+                onSpeakingChangeRef.current(true);
+            }
+        } else {
+            if (isSpeaking && (Date.now() - lastSpokeTime) > silenceDelay) {
+                isSpeaking = false;
+                onSpeakingChangeRef.current(false);
+            }
+        }
+        animationFrameId = requestAnimationFrame(checkSpeaking);
+    };
+    
+    checkSpeaking();
+    
+    return () => {
+        cancelAnimationFrame(animationFrameId);
+        if (isSpeaking) {
+            onSpeakingChangeRef.current(false);
+        }
+    };
+
+  }, [analyserNodeRef, isDeafened]);
 
   useEffect(() => {
     // Fallback for browsers that don't support audioContext.setSinkId
@@ -162,16 +230,27 @@ const PlayerAudio: React.FC<{
   return <audio ref={audioRef} playsInline muted style={{ display: 'none' }} />;
 };
 
-export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKick, onVolumeChange, selectedAudioOutput, isDeafened, audioContext, audioPositions }) => {
-  const audiblePlayerNames = useMemo(() => 
-    new Set(audioPositions?.sources.map(s => s.name) ?? [])
-  , [audioPositions]);
+export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKick, onVolumeChange, selectedAudioOutput, isDeafened, audioContext, audioPositions, audibleRange }) => {
+  const [speakingPlayers, setSpeakingPlayers] = useState<Set<string>>(new Set());
 
   return (
     <div className="space-y-3">
       {room.otherPlayers.map(player => {
         const sourceData = audioPositions?.sources.find(s => s.name === player.name);
-        const isAudible = audiblePlayerNames.has(player.name);
+        
+        let isAudibleForGlow = false;
+        if (audioPositions?.listener?.location && sourceData?.location) {
+          const listenerPos = audioPositions.listener.location;
+          const sourcePos = sourceData.location;
+          const distance = Math.sqrt(
+              Math.pow(sourcePos.x - listenerPos.x, 2) +
+              Math.pow(sourcePos.y - listenerPos.y, 2) +
+              Math.pow(sourcePos.z - listenerPos.z, 2)
+          );
+          isAudibleForGlow = distance <= audibleRange;
+        }
+
+        const isSpeaking = speakingPlayers.has(player.name);
 
         return (
             <React.Fragment key={player.id}>
@@ -180,6 +259,7 @@ export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKic
                     canKick={currentRole === 'owner'}
                     onKick={() => onKick(player)}
                     onVolumeChange={(volume) => onVolumeChange(player, volume)}
+                    isSpeaking={isSpeaking && isAudibleForGlow}
                 />
                 {player.stream && audioContext && (
                   <PlayerAudio
@@ -188,8 +268,23 @@ export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKic
                     volume={player.volume}
                     isDeafened={isDeafened}
                     audioContext={audioContext}
-                    isAudible={isAudible}
                     sourceLocation={sourceData?.location}
+                    onSpeakingChange={(speaking) => {
+                        setSpeakingPlayers(prev => {
+                            const isCurrentlySpeaking = prev.has(player.name);
+                            if (isCurrentlySpeaking === speaking) {
+                                return prev;
+                            }
+                            const newSet = new Set(prev);
+                            if (speaking) {
+                                newSet.add(player.name);
+                            } else {
+                                newSet.delete(player.name);
+                            }
+                            return newSet;
+                        })
+                    }}
+                    audibleRange={audibleRange}
                   />
                 )}
             </React.Fragment>

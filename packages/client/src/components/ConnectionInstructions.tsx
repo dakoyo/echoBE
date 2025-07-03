@@ -9,8 +9,6 @@ interface ConnectionInstructionsProps {
   onConnected: () => void;
 }
 
-const TRANSITION_DELAY = 5000; // 5 seconds
-
 const CodeBlock: React.FC<{text: string, onCopy: () => void, copied: boolean}> = React.memo(function CodeBlock({ text, onCopy, copied }) {
   return (
     <div className="bg-[#212121] p-4 flex items-center justify-between border-2 border-t-[#272727] border-l-[#272727] border-b-[#545454] border-r-[#545454] mt-2">
@@ -27,38 +25,24 @@ const CodeBlock: React.FC<{text: string, onCopy: () => void, copied: boolean}> =
 });
 
 export const ConnectionInstructions: React.FC<ConnectionInstructionsProps> = ({ onConnected }) => {
-  const [progress, setProgress] = useState(0);
   const [connectCopied, setConnectCopied] = useState(false);
   const connectCommand = '/connect localhost:3000';
 
   useEffect(() => {
     const handleWorldConnected = () => {
-      // Once connected, call the callback to transition views.
       onConnected();
     };
+
+    // Expose a function on the window for developers to skip this step.
+    (window as any).skipConnection = handleWorldConnected;
 
     // Subscribe to the event that fires when Minecraft connects.
     world.events.on('worldConnected', handleWorldConnected);
 
-    // Simulate the connection process. In a real app, this event
-    // would be fired by the underlying Minecraft connection.
-    const simulationTimer = setTimeout(() => {
-      world.events.emit('worldConnected');
-    }, TRANSITION_DELAY);
-
-    // Update the progress bar to visualize the connection timeout.
-    const interval = setInterval(() => {
-      setProgress(p => {
-        const newProgress = p + (100 / (TRANSITION_DELAY / 100));
-        return newProgress > 100 ? 100 : newProgress;
-      });
-    }, 100);
-
-    // Cleanup listeners and timers when the component unmounts.
+    // Cleanup listeners and the global function when the component unmounts.
     return () => {
-      clearTimeout(simulationTimer);
-      clearInterval(interval);
       world.events.removeListener('worldConnected', handleWorldConnected);
+      delete (window as any).skipConnection;
     };
   }, [onConnected]);
 
@@ -82,15 +66,14 @@ export const ConnectionInstructions: React.FC<ConnectionInstructionsProps> = ({ 
             <CodeBlock text={connectCommand} onCopy={handleCopy} copied={connectCopied} />
           </div>
 
-          <div className="w-full bg-[#212121] border-2 border-t-[#272727] border-l-[#272727] border-b-[#545454] border-r-[#545454] mt-8">
-            <div 
-              className="bg-[#58A445] h-4 transition-all duration-100 ease-linear" 
-              style={{ width: `${progress}%` }}
-            ></div>
+          <div className="mt-8">
+            <p className="text-lg text-[#A9A9A9] mt-3 animate-pulse">
+              Minecraftからの接続を待っています...
+            </p>
+            <p className="text-xs text-[#545454] mt-4">
+              (開発者ツールで `skipConnection()` を実行してスキップできます)
+            </p>
           </div>
-          <p className="text-sm text-[#A9A9A9] mt-3">
-            ボイスチャットに自動的に移動します...
-          </p>
 
         </div>
       </main>

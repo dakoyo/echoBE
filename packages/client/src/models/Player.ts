@@ -1,5 +1,3 @@
-
-
 import type { PlayerData } from '../App.js';
 
 /**
@@ -55,10 +53,10 @@ export class Player {
 
     /**
      * Updates the player's volume.
-     * @param volume The new volume level (0-150).
+     * @param volume The new volume level (0-200).
      */
     public setVolume(volume: number): void {
-        this._volume = Math.max(0, Math.min(150, volume));
+        this._volume = Math.max(0, Math.min(200, volume));
     }
     
     /**

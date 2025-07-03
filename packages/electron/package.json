@@ -7,12 +7,13 @@
   "dependencies": {
     "electron": "^36.5.0",
     "electron-builder": "^26.0.12",
-    "electron-is-dev": "^3.0.1"
+    "electron-is-dev": "^3.0.1",
+    "socket-be": "^2.1.0"
   },
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder",
-    "dev": "cd ../client && yarn build && cd ../electron && electron ."
+    "start": "electron ./dist",
+    "build": "tsc && electron-builder",
+    "dev": "cd ../client && yarn build && tsc && cd ../electron && electron ./dist"
   },
   "devDependencies": {}
 }

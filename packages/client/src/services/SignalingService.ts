@@ -1,6 +1,3 @@
-
-
-
 import { EventEmitter } from 'events';
 import { Player } from '../models/Player.js';
 import { world } from '../ipc/Minecraft.js';
@@ -473,7 +470,7 @@ export class SignalingService extends EventEmitter {
   private handleTick() {
     if (this.role !== 'owner' || !this.clientId) return;
 
-    const allPlayerData = new Map<string, { name: string, location: Location, rotation: Rotation }>();
+    const allPlayerData = new Map<string, { name: string; location: Location; rotation: Rotation }>();
     const ownerName = this.playerNames.get(this.clientId);
     if (ownerName) {
         allPlayerData.set(this.clientId, {
@@ -495,21 +492,24 @@ export class SignalingService extends EventEmitter {
     });
 
     allPlayerData.forEach((listenerData, listenerId) => {
-        const audibleSources: AudioSourceData[] = [];
+        const sources: AudioSourceData[] = [];
         allPlayerData.forEach((sourceData, sourceId) => {
-            const distance = this.calculateDistance(listenerData.location, sourceData.location);
-            if (distance <= this.latestGameSettings.audioRange) {
-                audibleSources.push({
-                    name: sourceData.name,
-                    location: sourceData.location,
-                    rotation: sourceData.rotation,
-                });
+            // A player should not hear their own audio source.
+            if (listenerId === sourceId) {
+                return;
             }
+            // The check for audibleRange is removed. All player data is sent to clients
+            // for them to process audio falloff.
+            sources.push({
+                name: sourceData.name,
+                location: sourceData.location,
+                rotation: sourceData.rotation,
+            });
         });
 
         const payload: PlayerAudioUpdatePayload = {
             listener: { location: listenerData.location, rotation: listenerData.rotation },
-            sources: audibleSources,
+            sources: sources,
         };
 
         if (listenerId === this.clientId) {
@@ -522,13 +522,6 @@ export class SignalingService extends EventEmitter {
             }, listenerId);
         }
     });
-  }
-
-  private calculateDistance(loc1: Location, loc2: Location): number {
-    const dx = loc1.x - loc2.x;
-    const dy = loc1.y - loc2.y;
-    const dz = loc1.z - loc2.z;
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
   public async updateLocalStream(deviceId: string, isMuted: boolean) {

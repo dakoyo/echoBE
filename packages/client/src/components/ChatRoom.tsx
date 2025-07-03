@@ -384,6 +384,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
               isDeafened={isDeafened}
               audioContext={audioContext}
               audioPositions={audioPositions}
+              audibleRange={audibleRange}
             />
           </div>
           <div className="flex-shrink-0">
