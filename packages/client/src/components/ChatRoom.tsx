@@ -243,6 +243,57 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
       signalingService.off('room-closed', handleRoomClosed);
     };
   }, [signalingService, currentUser, role, onLeave, audioContext]);
+  
+  // Effect for handling Minecraft world events (owner only)
+  useEffect(() => {
+    if (role !== 'owner') return;
+
+    const handlePlayerJoin = ({ playerName }: { playerName: string }) => {
+        console.log(`[ChatRoom] Player joined Minecraft: ${playerName}`);
+        world.addPlayer(playerName);
+        const newPlayerCode = world.generateAndAssignCode(playerName);
+        
+        if (roomCode && newPlayerCode) {
+            world.notifyPlayerWithCode(playerName, roomCode);
+        }
+
+        const newPlayerData: PlayerData = {
+            id: Math.random(),
+            name: playerName,
+            isMuted: false,
+            isDeafened: false,
+            isOwner: false,
+            volume: 100,
+            isOnline: false, // Player joins the game, not the voice chat yet.
+            playerCode: newPlayerCode
+        };
+
+        setRoom(prevRoom => prevRoom.addPlayer(newPlayerData));
+        setMessages(prev => [...prev, { senderName: 'システム', text: `${playerName}さんがゲームに参加しました。`, isMe: false }]);
+    };
+    
+    const handlePlayerLeave = ({ playerName }: { playerName: string }) => {
+        console.log(`[ChatRoom] Player left Minecraft: ${playerName}`);
+        
+        const player = room.allPlayers.find(p => p.name === playerName);
+        if (player && player.isOnline && player.signalingId) {
+            console.log(`Player ${playerName} was online, disconnecting them.`);
+            signalingService.disconnectClient(player.signalingId);
+        }
+
+        world.removePlayer(playerName);
+        setRoom(prevRoom => prevRoom.removePlayerByName(playerName));
+        setMessages(prev => [...prev, { senderName: 'システム', text: `${playerName}さんがゲームから退出しました。`, isMe: false }]);
+    };
+
+    world.events.on('playerJoin', handlePlayerJoin);
+    world.events.on('playerLeave', handlePlayerLeave);
+
+    return () => {
+        world.events.removeListener('playerJoin', handlePlayerJoin);
+        world.events.removeListener('playerLeave', handlePlayerLeave);
+    };
+  }, [role, signalingService, roomCode, room]);
 
   // Effect for Owner to broadcast setting changes
   useEffect(() => {
@@ -340,7 +391,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
 
 
   return (
-    <div className="min-h-screen bg-[#313233] text-[#E0E0E0] flex flex-col selection:bg-[#58A445] selection:text-white">
+    <div className="h-screen bg-[#313233] text-[#E0E0E0] flex flex-col selection:bg-[#58A445] selection:text-white">
       <div className="flex flex-grow overflow-hidden">
         <div className={`fixed md:relative top-0 left-0 h-full md:h-auto z-40 transition-transform transform ease-in-out duration-300 md:transform-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
           <Sidebar

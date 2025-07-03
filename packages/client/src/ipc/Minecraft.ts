@@ -1,5 +1,3 @@
-
-
 // Electronのコンテキストブリッジで使う。ダミー。オーナーしか使用ができない
 
 import { EventEmitter } from "events";
@@ -27,16 +25,24 @@ interface PlayerData {
 
 // イベント定義
 interface WorldEvents {
-  playerJoin: (playerName: string) => void; // プレイヤーがマインクラフトに入った時に発火する
-  playerLeave: (playerName: string) => void; // プレイヤーがマインクラフトから出た時に発火する
+  playerJoin: (ev: { playerName: string }) => void; // プレイヤーがマインクラフトに入った時に発火する
+  playerLeave: (ev: { playerName: string }) => void; // プレイヤーがマインクラフトから出た時に発火する
   tick: () => void; // マインクラフト内の1tick（0.05秒）ごとに発火する
   worldConnected: () => void; // /connect localhost:3000などのコマンドがマインクラフト内で入力され、webSocket接続が確立された時に発火する
-  codeRequest: (playerName: string) => void // プレイヤーコードを生成するようにリクエストされた時に発火
+  codeRequest: (ev: { playerName: string }) => void // プレイヤーコードを生成するようにリクエストされた時に発火
 }
 
 class WorldEventEmitter extends EventEmitter {
   on<K extends keyof WorldEvents>(eventName: K, listener: WorldEvents[K]): this {
     return super.on(eventName, listener);
+  }
+
+  off<K extends keyof WorldEvents>(eventName: K, listener: WorldEvents[K]): this {
+    return super.off(eventName, listener);
+  }
+
+  removeListener<K extends keyof WorldEvents>(eventName: K, listener: WorldEvents[K]): this {
+    return super.removeListener(eventName, listener);
   }
 
   emit<K extends keyof WorldEvents>(eventName: K, ...args: Parameters<WorldEvents[K]>): boolean {
@@ -64,6 +70,12 @@ class World {
     return Array.from(this.players.keys());
   }
 
+  removePlayer(playerName: string): void {
+    this.players.delete(playerName);
+    this.playerCodes.delete(playerName);
+    console.log(`[Minecraft Mock] Player ${playerName} left the world.`);
+  }
+
   getPlayerLocation(playerName: string): PlayerLocation {
     return this.players.get(playerName)?.location || { x: 0, y: 0, z: 0 };
   }
@@ -72,13 +84,21 @@ class World {
     return this.players.get(playerName)?.rotation || { x: 0, y: 0 };
   }
 
+  generateAndAssignCode(playerName: string): string {
+    if (playerName === "Owner") return '';
+    const existingCode = this.playerCodes.get(playerName);
+    if (existingCode) return existingCode;
+
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    this.playerCodes.set(playerName, code);
+    return code;
+  }
+
   generatePlayerCodes(): void {
     this.playerCodes.clear();
     this.players.forEach((_, name) => {
-      // Don't generate a code for the owner
       if (name !== "Owner") {
-        const code = Math.floor(1000 + Math.random() * 9000).toString();
-        this.playerCodes.set(name, code);
+        this.generateAndAssignCode(name);
       }
     });
     console.log("Generated Player Codes:", this.playerCodes);
@@ -93,10 +113,19 @@ class World {
       return undefined;
   }
   
+  notifyPlayerWithCode(playerName: string, roomCode: string): void {
+      const code = this.playerCodes.get(playerName);
+      if(!code) {
+          console.warn(`No code found for player ${playerName} to notify.`);
+          return;
+      }
+      const message = `=====EchoBE プレイヤー情報=====\nルームID：${roomCode}\nプレイヤー名：${playerName}\nプレイヤーコード：${code}\n===========================`;
+      this.sendMessage(message, playerName);
+  }
+
   notifyPlayersWithCodes(roomCode: string): void {
-      this.playerCodes.forEach((code, name) => {
-          const message = `=====EchoBE プレイヤー情報=====\nルームID：${roomCode}\nプレイヤー名：${name}\nプレイヤーコード：${code}\n===========================`;
-          this.sendMessage(message, name);
+      this.playerCodes.forEach((_code, name) => {
+          this.notifyPlayerWithCode(name, roomCode);
       });
   }
 

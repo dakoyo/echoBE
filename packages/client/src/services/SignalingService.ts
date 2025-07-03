@@ -8,6 +8,25 @@ const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 type Role = 'owner' | 'player';
 
+interface SignalingServiceEvents {
+  'open': () => void;
+  'room-created': (payload: RoomCreatedMessage['payload']) => void;
+  'connected-with-id': (payload: { ownerId: string }) => void;
+  'new-client': (payload: NewClientMessage['payload']) => void;
+  'auth-success': (payload: AuthSuccessMessage['payload']) => void;
+  'error': (payload: { message: string }) => void;
+  'room-closed': () => void;
+  'disconnect': (payload: disconnectMessage['payload']) => void;
+  'stream-added': (clientId: string, stream: MediaStream) => void;
+  'stream-removed': (clientId: string) => void;
+  'chat-message': (payload: { senderName: string; text: string }) => void;
+  'room-state-received': (players: { id: string; name: string }[]) => void;
+  'new-peer-discovered': (payload: { id: string; name: string }) => void;
+  'game-setting-update': (payload: { audioRange: number; spectatorVoice: boolean }) => void;
+  'player-status-update': (payload: PlayerStatusUpdateBroadcastDataMessage['payload']) => void;
+  'player-audio-update': (payload: PlayerAudioUpdatePayload) => void;
+}
+
 export class SignalingService extends EventEmitter {
   private ws: WebSocket | null = null;
   private role: Role;
@@ -20,6 +39,22 @@ export class SignalingService extends EventEmitter {
   private persistentPeers: Set<string> = new Set();
   private expectingDisconnectFor: Set<string> = new Set();
   private latestGameSettings: { audioRange: number; spectatorVoice: boolean };
+
+  on<K extends keyof SignalingServiceEvents>(eventName: K, listener: SignalingServiceEvents[K]): this {
+    return super.on(eventName, listener);
+  }
+
+  off<K extends keyof SignalingServiceEvents>(eventName: K, listener: SignalingServiceEvents[K]): this {
+    return super.off(eventName, listener);
+  }
+
+  removeListener<K extends keyof SignalingServiceEvents>(eventName: K, listener: SignalingServiceEvents[K]): this {
+    return super.removeListener(eventName, listener);
+  }
+  
+  emit<K extends keyof SignalingServiceEvents>(eventName: K, ...args: Parameters<SignalingServiceEvents[K]>): boolean {
+    return super.emit(eventName, ...args);
+  }
 
   constructor(role: Role, localStream: MediaStream, owner?: Player) {
     super();

@@ -67,7 +67,20 @@ export class Room {
 
     public addPlayer(playerData: PlayerData): Room {
         const newRoom = this.clone();
-        if (!Array.from(newRoom.players.values()).some(p => p.signalingId === playerData.signalingId)) {
+        
+        const playerExists = Array.from(newRoom.players.values()).some(p => {
+            // A player is considered the same if they have the same name
+            if (p.name === playerData.name) {
+                return true;
+            }
+            // Or if they have the same, defined, signalingId
+            if (playerData.signalingId && p.signalingId === playerData.signalingId) {
+                return true;
+            }
+            return false;
+        });
+
+        if (!playerExists) {
             const newPlayer = new Player(playerData);
             newRoom.players.set(newPlayer.id, newPlayer);
             if (newPlayer.signalingId) {
@@ -88,6 +101,27 @@ export class Room {
                 }
             }
         });
+        return newRoom;
+    }
+
+    public removePlayerByName(playerName: string): Room {
+        const newRoom = this.clone();
+        let playerToRemove: Player | undefined;
+        
+        for (const player of newRoom.players.values()) {
+            if (player.name === playerName) {
+                playerToRemove = player;
+                break;
+            }
+        }
+        
+        if (playerToRemove) {
+            newRoom.players.delete(playerToRemove.id);
+            if (playerToRemove.signalingId) {
+                newRoom.playersBySignalingId.delete(playerToRemove.signalingId);
+            }
+        }
+        
         return newRoom;
     }
 
