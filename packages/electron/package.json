@@ -13,7 +13,7 @@
   "scripts": {
     "start": "electron ./dist",
     "build": "tsc && electron-builder",
-    "dev": "tsc &&cd ../client && yarn build && cd ../electron && electron ./dist"
+    "dev": "tsc &&cd ../client && yarn build --base ./ && cd ../electron && electron ./dist"
   },
   "devDependencies": {
     "uuid": "^11.1.0"
