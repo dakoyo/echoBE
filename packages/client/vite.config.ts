@@ -4,7 +4,7 @@ import { defineConfig } from 'vite';
 export default defineConfig(() => {
     return {
       root: 'src',
-      base: './',
+      base: '/echoBE/',
       build: {
         outDir: '../../electron/dist/app',
       },

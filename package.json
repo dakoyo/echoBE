@@ -6,6 +6,7 @@
   "scripts": {
     "dev:vite": "cd packages/client && yarn dev",
     "build:vite": "cd packages/client && yarn build",
+    "install:vite": "cd packages/client && yarn install",
     "dev:server": "cd services && yarn dev",
     "build:server": "cd services && yarn build",
     "start:server": "cd services && yarn start",
