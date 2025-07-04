@@ -3,12 +3,13 @@
   "scripts": {
     "dev": "tsc && node dist/server.js",
     "build": "tsc",
-    "build": "tsc",
     "start": "node dist/server.js",
     "test": "tsc && node dist/test.js"
   },
   "dependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
+    "cors": "^2.8.5",
     "express": "^5.1.0",
     "ws": "^8.18.2"
   },

@@ -1,6 +1,7 @@
 // server.ts
 import express from 'express';
 import http from 'http';
+import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import { IncomingMessage } from 'http';
 import { CustomWebSocket } from './types.js';
@@ -8,6 +9,9 @@ import { handleOwnerConnection, handleClientConnection } from './handlers.js';
 import { logger } from './logger.js';
 
 const app = express();
+
+app.use(cors());
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 

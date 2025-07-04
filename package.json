@@ -8,6 +8,8 @@
     "build:vite": "cd packages/client && yarn build",
     "dev:server": "cd services && yarn dev",
     "build:server": "cd services && yarn build",
+    "start:server": "cd services && yarn start",
+    "install:server": "cd services && yarn install",
     "test:server": "cd services && yarn test",
     "dev:electron": "cd packages/electron && yarn dev",
     "build:electron": "cd packages/electron && yarn build",
