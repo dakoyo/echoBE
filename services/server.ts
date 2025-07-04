@@ -12,6 +12,10 @@ const app = express();
 
 app.use(cors());
 
+app.get('/health', (_req, res) => {
+    res.send('Hello World');
+});
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
