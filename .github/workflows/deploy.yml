@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: yarn install:vite # `yarn install:vite` が必要なら `run: yarn install:vite` に変更
       - name: Build
-        run: yarn build
+        run: yarn build:vite
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
