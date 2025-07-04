@@ -169,4 +169,42 @@ export class Room {
         const otherPlayersData = allPlayersData.filter(p => p.id !== this.currentUser.id);
         return new Room(new Player(currentUserData), otherPlayersData);
     }
+
+    public syncPlayers(playersInfo: { id: string; name: string }[], ownerId: string): Room {
+        const newRoom = this.clone();
+
+        playersInfo.forEach(pInfo => {
+            let player = newRoom.getPlayerBySignalingId(pInfo.id);
+            
+            if (player) {
+                // Player exists, only update if name is different (for placeholder owner)
+                if (player.name !== pInfo.name) {
+                    const newPlayerData = player.toData();
+                    newPlayerData.name = pInfo.name;
+                    const updatedPlayer = new Player(newPlayerData);
+                    
+                    newRoom.players.set(player.id, updatedPlayer);
+                    if (player.signalingId) {
+                        newRoom.playersBySignalingId.set(player.signalingId, updatedPlayer);
+                    }
+                }
+            } else if (pInfo.id !== this.currentUser.signalingId) { // Don't re-add current user
+                // New player, add them
+                const newPlayer = new Player({
+                    id: Math.random(),
+                    name: pInfo.name,
+                    isMuted: false, isDeafened: false,
+                    isOwner: pInfo.id === ownerId,
+                    volume: 100, isOnline: true,
+                    signalingId: pInfo.id,
+                });
+                newRoom.players.set(newPlayer.id, newPlayer);
+                if (newPlayer.signalingId) {
+                    newRoom.playersBySignalingId.set(newPlayer.signalingId!, newPlayer);
+                }
+            }
+        });
+
+        return newRoom;
+    }
 }

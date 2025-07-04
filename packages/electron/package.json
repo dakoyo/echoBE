@@ -13,7 +13,9 @@
   "scripts": {
     "start": "electron ./dist",
     "build": "tsc && electron-builder",
-    "dev": "cd ../client && yarn build && tsc && cd ../electron && electron ./dist"
+    "dev": "tsc &&cd ../client && yarn build && cd ../electron && electron ./dist"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "uuid": "^11.1.0"
+  }
 }

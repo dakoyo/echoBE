@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Header } from './components/Header.js';
 import { Hero } from './components/Hero.js';
@@ -9,7 +8,7 @@ import { RoomCodeInput } from './components/RoomCodeInput.js';
 import { ChatRoom } from './components/ChatRoom.js';
 import { ConnectionInstructions } from './components/ConnectionInstructions.js';
 import { Player as PlayerClass } from './models/Player.js';
-import { world } from './ipc/Minecraft.js';
+import { world, isElectron } from './ipc/Minecraft.js';
 import { SignalingService } from './services/SignalingService.js';
 import type { AuthSuccessMessage } from './types/signaling.js';
 
@@ -112,11 +111,16 @@ const App: React.FC = () => {
   };
 
   const handleCreateRoom = async () => {
+    if (!isElectron) {
+      alert("ルームの作成はデスクトップ版でのみ利用できます。");
+      return;
+    }
     if (!localStream) {
       alert("マイクの準備ができていません。");
       return;
     }
     setIsCreatingRoom(true);
+    await world.startServer();
     setUserRole('owner');
     setView('connecting');
   };
@@ -165,14 +169,17 @@ const App: React.FC = () => {
     }
   }, [localStream]);
 
-  const handleLeaveRoom = useCallback(() => {
+  const handleLeaveRoom = useCallback(async () => {
+    if (isElectron && userRole === 'owner') {
+      await world.stopServer();
+    }
     signalingServiceRef.current?.close();
     signalingServiceRef.current = null;
     setView('landing');
     setUserRole(null);
     setCurrentUser(null);
     setRoomCode('');
-  }, []);
+  }, [userRole]);
 
   const renderModalContent = () => {
     switch (activeModal) {
@@ -228,7 +235,7 @@ const App: React.FC = () => {
       <div className="relative z-10 flex flex-col flex-grow">
         <Header />
         <main className="flex-grow flex items-center justify-center">
-          <Hero onJoin={() => openModal(ModalType.JOIN)} onCreate={handleCreateRoom} isCreating={isCreatingRoom} />
+          <Hero onJoin={() => openModal(ModalType.JOIN)} onCreate={handleCreateRoom} isCreating={isCreatingRoom} isElectron={isElectron}/>
         </main>
         <Footer />
       </div>

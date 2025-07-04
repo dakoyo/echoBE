@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Electronのコンテキストブリッジで使う。ダミー。オーナーしか使用ができない
 
 import { EventEmitter } from "events";
@@ -29,7 +30,6 @@ interface WorldEvents {
   playerLeave: (ev: { playerName: string }) => void; // プレイヤーがマインクラフトから出た時に発火する
   tick: () => void; // マインクラフト内の1tick（0.05秒）ごとに発火する
   worldConnected: () => void; // /connect localhost:3000などのコマンドがマインクラフト内で入力され、webSocket接続が確立された時に発火する
-  codeRequest: (ev: { playerName: string }) => void // プレイヤーコードを生成するようにリクエストされた時に発火
 }
 
 class WorldEventEmitter extends EventEmitter {
@@ -51,47 +51,52 @@ class WorldEventEmitter extends EventEmitter {
 }
 
 class World {
-  private players: Map<string, PlayerData> = new Map([
-    ["Owner", { name: "Owner", location: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0 } , isSpectator: false}],
-    ["Steve", { name: "Steve", location: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0 }, isSpectator: false }],
-    ["Alex", { name: "Alex", location: { x: -10, y: 0, z: 0 }, rotation: { x: 0, y: 0 }, isSpectator: true }],
-  ]);
+  players: Map<string, PlayerData> = new Map();
   private playerCodes: Map<string, string> = new Map(); // playerName -> playerCode
 
-  constructor() {
-    setInterval(() => this.events.emit('tick'), 50);
+  constructor() {}
+
+  async startServer(): Promise<void> {
+    if (window.electronAPI?.startServer) {
+      window.electronAPI.startServer(3000);
+    }
+  }
+
+  async stopServer(): Promise<void> {
+    if (window.electronAPI?.stopServer) {
+      window.electronAPI.stopServer();
+    }
     
-    // Simulate player join/leave for testing purposes.
-    // In a real application, these would be triggered by the game.
-    setTimeout(() => this.events.emit('playerJoin', { playerName: 'Notch' }), 15000);
-    setTimeout(() => this.events.emit('playerLeave', { playerName: 'Alex' }), 25000);
   }
 
   async getOwnerName(): Promise<string> {
-    return window.electronAPI.getLocalPlayerName();
-  }
-
-  getPlayerNames(): string[] {
-    return Array.from(this.players.keys());
+    if (window.electronAPI?.getLocalPlayerName) {
+      return window.electronAPI.getLocalPlayerName();
+    }
+    return 'Owner';
   }
 
   addPlayer(playerName: string): void {
-    if (this.players.has(playerName)) return;
-    this.players.set(playerName, {
+    if (this.players.has(playerName)) {
+      return;
+    }
+    const defaultPlayerData: PlayerData = {
       name: playerName,
-      location: { x: (Math.random() - 0.5) * 30, y: 0, z: (Math.random() - 0.5) * 30 },
+      location: { x: 0, y: 0, z: 0 },
       rotation: { x: 0, y: 0 },
       isSpectator: false,
-    });
-    console.log(`[Minecraft Mock] Player ${playerName} joined the world.`);
+    };
+    this.players.set(playerName, defaultPlayerData);
   }
 
   removePlayer(playerName: string): void {
     this.players.delete(playerName);
     this.playerCodes.delete(playerName);
-    console.log(`[Minecraft Mock] Player ${playerName} left the world.`);
   }
 
+  getPlayerNames(): string[] {
+    return Array.from(this.players.keys());
+  }
   getPlayerLocation(playerName: string): PlayerLocation {
     return this.players.get(playerName)?.location || { x: 0, y: 0, z: 0 };
   }
@@ -151,7 +156,9 @@ class World {
    * @param playerName - 送信するプレイヤーの名前（undefinedならワールド全体に送信される）
    */
   sendMessage(message: string, playerName?: string) {
-    window.electronAPI.sendMessage(message, playerName);
+    if (window.electronAPI?.sendMessage) {
+      window.electronAPI.sendMessage(message, playerName);
+    }
     console.log(`[Minecraft Mock] Message sent: ${message} (from ${playerName || 'world'})`);
   }
 
@@ -159,16 +166,37 @@ class World {
 }
 
 export const world = new World();
+export const isElectron = !!window.electronAPI;
 
-window.electronAPI.onPlayerJoin((ev) => {
-  world.events.emit('playerJoin', ev);
-});
-window.electronAPI.onPlayerLeave((ev) => {
-  world.events.emit('playerLeave', ev);
-});
-window.electronAPI.onTick(() => {
-  world.events.emit('tick');
-});
-window.electronAPI.onWorldConnected(() => {
-  world.events.emit('worldConnected');
-});
+if (isElectron) {
+  window.electronAPI.onPlayerJoin((ev) => {
+    world.events.emit('playerJoin', ev);
+  });
+  window.electronAPI.onPlayerLeave((ev) => {
+    world.events.emit('playerLeave', ev);
+  });
+  window.electronAPI.onTick(async () => {
+    if (window.electronAPI.requestPlayerData) {
+        world.players = await window.electronAPI.requestPlayerData();
+    }
+    world.events.emit('tick');
+  });
+  window.electronAPI.onWorldConnected(() => {
+    world.events.emit('worldConnected');
+  });
+}
+
+export const startServer = async (port: number) => {
+  if (!isElectron) {
+    console.warn("Not running in Electron environment. Cannot start server.");
+    return;
+  }
+  await window.electronAPI.startServer(port);
+}
+export const stopServer = async () => {
+  if (!isElectron) {
+    console.warn("Not running in Electron environment. Cannot stop server.");
+    return;
+  }
+  await window.electronAPI.stopServer();
+}

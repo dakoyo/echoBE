@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Sidebar } from './Sidebar.js';
 import { PlayerList } from './PlayerList.js';
@@ -80,11 +81,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
           setRoom(new Room(currentUser, initialPlayersData));
       } else {
         // For players, we initially only know about the owner.
-        // The rest of the players will be discovered via data channel messages.
-        const ownerName = await world.getOwnerName();
+        // The owner's name and other players will be synced via data channel.
         const ownerData: PlayerData = {
           id: Math.random(),
-          name: ownerName,
+          name: "オーナー", // Placeholder name for owner
           isMuted: false,
           isDeafened: false,
           isOwner: true,
@@ -103,36 +103,32 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
             const listener = audioContext.listener;
             const { location, rotation } = payload.listener;
 
-            // Update Listener Position
-            if (listener.positionX) {
-                listener.positionX.setValueAtTime(location.x, audioContext.currentTime);
-                listener.positionY.setValueAtTime(location.y, audioContext.currentTime);
-                listener.positionZ.setValueAtTime(location.z, audioContext.currentTime);
-            } else {
-                listener.setPosition(location.x, location.y, location.z);
-            }
+            // Update Listener Position - REFACTORED
+            // Use modern API directly for consistency and reliability.
+            listener.setPosition(location.x, location.y, location.z);
 
             // Update Listener Orientation
-            const theta = (270 - rotation.y) * Math.PI / 180;
-            const pitch = rotation.x * Math.PI / 180;
+            // Convert Minecraft's rotation system to the Web Audio API's system.
+            // Minecraft Yaw: 0 is South, -90 is East, -180 is North, 90 is West.
+            // Web Audio Yaw: Standard counter-clockwise angle where 0 is North (+Z).
+            // Minecraft Pitch: -90 is up, 90 is down.
+            // Web Audio Pitch: Standard angle where positive is up.
+            const yaw = (rotation.y + 180) * (Math.PI / 180); // Convert MC yaw to Web Audio yaw in radians
+            const pitch = -rotation.x * (Math.PI / 180);      // Convert MC pitch to Web Audio pitch in radians
+
+            // Calculate forward vector components using spherical to Cartesian conversion
+            const fwdX = Math.cos(pitch) * Math.sin(yaw);
+            const fwdY = Math.sin(pitch);
+            const fwdZ = -Math.cos(pitch) * Math.cos(yaw);
             
-            const fwdX = Math.cos(pitch) * Math.cos(theta);
-            const fwdY = -Math.sin(pitch);
-            const fwdZ = -Math.cos(pitch) * Math.sin(theta);
+            // The 'up' vector is generally fixed at (0, 1, 0) for a Y-up coordinate system.
             const upX = 0;
             const upY = 1;
             const upZ = 0;
             
-            if (listener.forwardX) {
-                listener.forwardX.setValueAtTime(fwdX, audioContext.currentTime);
-                listener.forwardY.setValueAtTime(fwdY, audioContext.currentTime);
-                listener.forwardZ.setValueAtTime(fwdZ, audioContext.currentTime);
-                listener.upX.setValueAtTime(upX, audioContext.currentTime);
-                listener.upY.setValueAtTime(upY, audioContext.currentTime);
-                listener.upZ.setValueAtTime(upZ, audioContext.currentTime);
-            } else {
-                listener.setOrientation(fwdX, fwdY, fwdZ, upX, upY, upZ);
-            }
+            // REFACTORED
+            // Use modern API directly.
+            listener.setOrientation(fwdX, fwdY, fwdZ, upX, upY, upZ);
         }
     };
 
@@ -164,18 +160,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     };
 
     // A player receives the full list of connected peers from the owner.
-    const handleRoomState = (players: {id: string, name: string}[]) => {
-      const newPlayersData: PlayerData[] = players.map(p => ({
-        id: Math.random(),
-        name: p.name,
-        isMuted: false,
-        isDeafened: false,
-        isOwner: false,
-        volume: 100,
-        isOnline: true,
-        signalingId: p.id,
-      }));
-      setRoom(prevRoom => prevRoom.addPlayers(newPlayersData));
+    const handleRoomState = (players: { id: string, name: string }[]) => {
+      setRoom(prevRoom => prevRoom.syncPlayers(players, signalingService.ownerId!));
     };
 
     // A player learns about a single new peer who joined after them.
@@ -391,7 +377,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
 
 
   return (
-    <div className="h-screen bg-[#313233] text-[#E0E0E0] flex flex-col selection:bg-[#58A445] selection:text-white">
+    <div className="min-h-screen bg-[#313233] text-[#E0E0E0] flex flex-col selection:bg-[#58A445] selection:text-white">
       <div className="flex flex-grow overflow-hidden">
         <div className={`fixed md:relative top-0 left-0 h-full md:h-auto z-40 transition-transform transform ease-in-out duration-300 md:transform-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
           <Sidebar

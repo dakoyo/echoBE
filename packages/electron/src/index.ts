@@ -1,22 +1,22 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const isDev = require('electron-is-dev');
-const { Player, Server, ServerEvent, World } = require('socket-be');
+const { Player, Server, ServerEvent } = require('socket-be');
 require('./types'); // Import types for JSDoc
 
+import { World, Server as ServerType, ServerEvent as ServerEventTypes } from 'socket-be';
+
+
 // Define variables
-/** @type {any} */
-let world = null;
-/** @type {any} */
-let server = null;
+let world: World | null  = null;
+let server: ServerType | null = null;
 /** @type {any} */
 let mainWindow = null;
 /** @type {NodeJS.Timeout|null} */
 let tickInterval = null;
 /** @type {any} */
 let localPlayer = null;
-/** @type {Array<any>} */
-let currentPlayers = [];
+let currentPlayers = new Map<string, any>(); // Map to hold player data
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -53,7 +53,7 @@ async function stopServerLogic() {
     }
     world = null;
     localPlayer = null;
-    currentPlayers = [];
+    currentPlayers = new Map(); // Clear the current players list
     console.log("Server stopped and resources cleaned up.");
 }
 
@@ -68,14 +68,22 @@ ipcMain.handle("start-server", async (event, port) => {
     }
 
     try {
-        server = new Server({ port });
+        server = new Server({ port, disableEncryption: true});
 
+
+        server.once(ServerEvent.Open, () => {
+            console.log(`Server is open on port ${port}`);
+            mainWindow?.webContents.send("serverOpen", { port });
+        })
         server.once(ServerEvent.WorldAdd, async (ev) => {
             world = ev.world;
+            console.log(`world initialized: ${world.name}`);
             localPlayer = await world.getLocalPlayer();
-            mainWindow?.webContents.send("worldConnected");
+            await world.runCommand(`scriptevent vc:connected ${localPlayer.name}`);
+            setTimeout(() => {
+                mainWindow?.webContents.send("worldConnected");
+            }, 500)
         });
-
         server.on(ServerEvent.PlayerJoin, ev => {
             if (ev.world !== world) return;
             mainWindow?.webContents.send("playerJoin", { playerName: ev.player.name });
@@ -91,8 +99,7 @@ ipcMain.handle("start-server", async (event, port) => {
                 if (!localPlayer) return;
                 mainWindow?.webContents.send("tick");
 
-                /** @type {Array<any>} */
-                const players = [];
+                const players = new Map();
                 const tags = await localPlayer.getTags();
                 for (const tag of tags || []) {
                     if (tag.startsWith("vc_")) {
@@ -100,7 +107,7 @@ ipcMain.handle("start-server", async (event, port) => {
                         try {
                             const data = JSON.parse(tag.substring(3));
                             if (data.type === "playerData") {
-                                players.push([data.name, data]);
+                                players.set(data.name, data);
                             }
                         } catch (e) {
                             console.error(`Failed to parse player data tag: ${tag}`, e);
@@ -177,7 +184,7 @@ app.on('window-all-closed', () => {
         }
         mainWindow = null; // Clear the main window reference
         localPlayer = null; // Clear the local player reference
-        currentPlayers = []; // Clear the current players list
+        currentPlayers = new Map(); // Clear the current players list
         app.quit();
 
     }

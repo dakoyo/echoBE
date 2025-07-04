@@ -1,3 +1,4 @@
+
 interface PlayerLocation {
     x: number;
     y: number;
@@ -31,7 +32,7 @@ declare global {
             onWorldConnected: (callback: () => void) => void;
             getLocalPlayerName: () => Promise<string>;
             onCodeRequest: (callback: (ev: { playerName: string }) => void) => void;
-            requestPlayerData: () => Promise<[string, PlayerData][]>; // Returns a promise that resolves to an array of tuples [playerName, PlayerData]
+            requestPlayerData: () => Promise<Map<string, PlayerData>>; // Returns a promise that resolves to an array of tuples [playerName, PlayerData]
             sendMessage: (message: string, playerName?: string) => Promise<void>;
         };
     }

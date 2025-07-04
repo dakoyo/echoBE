@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { Player } from '../models/Player.js';
 import { world } from '../ipc/Minecraft.js';
-import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage, GameSettingDataMessage, PlayerStatusDataMessage, PlayerStatusUpdateBroadcastDataMessage, Location, Rotation, PlayerAudioUpdatePayload, AudioSourceData, PlayerAudioUpdateDataMessage } from '../types/signaling.js';
+import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage, GameSettingDataMessage, PlayerStatusDataMessage, PlayerStatusUpdateBroadcastDataMessage, Location, Rotation, PlayerAudioUpdatePayload, AudioSourceData, PlayerAudioUpdateDataMessage } from '../types/signaling.js';
 
 const SIGNALING_SERVER_URL = 'ws://localhost:8080';
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -36,6 +36,7 @@ export class SignalingService extends EventEmitter {
   private playerNames: Map<string, string> = new Map();
   public clientId: string | null = null;
   public ownerId: string | null = null;
+  private ownerName: string | null = null;
   private persistentPeers: Set<string> = new Set();
   private expectingDisconnectFor: Set<string> = new Set();
   private latestGameSettings: { audioRange: number; spectatorVoice: boolean };
@@ -66,7 +67,7 @@ export class SignalingService extends EventEmitter {
     this.latestGameSettings = { audioRange: 48, spectatorVoice: true };
     
     if (owner) {
-      this.playerNames.set(owner.signalingId!, owner.name);
+      this.ownerName = owner.name;
     }
 
     if (this.role === 'owner') {
@@ -101,7 +102,7 @@ export class SignalingService extends EventEmitter {
       switch (message.type) {
         case 'room-created':
           this.clientId = (message as RoomCreatedMessage).payload.yourId;
-          this.playerNames.set(this.clientId!, 'Owner'); // Set owner name early
+          this.playerNames.set(this.clientId!, this.ownerName || 'Owner'); // Use real owner name
           this.emit('room-created', (message as RoomCreatedMessage).payload);
           break;
         case 'owner-info':
@@ -239,9 +240,12 @@ export class SignalingService extends EventEmitter {
         console.log(`Data channel with ${peerId} is open.`);
         if (this.role === 'owner') {
           // 1. Send the new player the current room state.
-          const players = Array.from(this.dataChannels.keys())
+          const otherPlayers = Array.from(this.dataChannels.keys())
             .filter(id => id !== peerId)
             .map(id => ({ id, name: this.playerNames.get(id) || 'Unknown' }));
+          
+          const ownerName = this.playerNames.get(this.clientId!) || 'Owner';
+          const players = [...otherPlayers, { id: this.clientId!, name: ownerName }];
           
           this.sendDataChannelMessage({
             'data-channel-type': 'room-state',

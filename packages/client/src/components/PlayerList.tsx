@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Role } from '../App.js';
 import { Player } from '../models/Player.js';
@@ -161,13 +162,7 @@ const PlayerAudio: React.FC<{
       panner.rolloffFactor = 19 / (safeAudibleRange - 1);
 
       if (sourceLocation) {
-        if (panner.positionX) {
-            panner.positionX.setValueAtTime(sourceLocation.x, audioContext.currentTime);
-            panner.positionY.setValueAtTime(sourceLocation.y, audioContext.currentTime);
-            panner.positionZ.setValueAtTime(sourceLocation.z, audioContext.currentTime);
-        } else {
-            panner.setPosition(sourceLocation.x, sourceLocation.y, sourceLocation.z);
-        }
+          panner.setPosition(sourceLocation.x, sourceLocation.y, sourceLocation.z);
       }
   }, [audioContext, isDeafened, volume, sourceLocation, audibleRange]);
 
