@@ -1,20 +1,29 @@
-export interface PlayerLocation {
-    x: number;
-    y: number;
-    z: number;
-}
+// Define interfaces using JSDoc for CommonJS compatibility
+/**
+ * @typedef {Object} PlayerLocation
+ * @property {number} x
+ * @property {number} y
+ * @property {number} z
+ */
 
-export interface PlayerRotation {
-    x: number;
-    y: number;
-}
+/**
+ * @typedef {Object} PlayerRotation
+ * @property {number} x
+ * @property {number} y
+ */
 
-export interface PlayerData {
-    type: "playerData";
-    name: string;
-    location: PlayerLocation;
-    rotation: PlayerRotation;
-    isSpectator: boolean;
-}
+/**
+ * @typedef {Object} PlayerData
+ * @property {"playerData"} type
+ * @property {string} name
+ * @property {PlayerLocation} location
+ * @property {PlayerRotation} rotation
+ * @property {boolean} isSpectator
+ */
 
-export type TagData = PlayerData;
+/**
+ * @typedef {PlayerData} TagData
+ */
+
+// No actual exports needed as we're using JSDoc for type definitions
+module.exports = {};

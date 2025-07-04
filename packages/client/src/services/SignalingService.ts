@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { Player } from '../models/Player.js';
 import { world } from '../ipc/Minecraft.js';
-import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage, GameSettingDataMessage, PlayerStatusDataMessage, PlayerStatusUpdateBroadcastDataMessage, Location, Rotation, PlayerAudioUpdatePayload, AudioSourceData, PlayerAudioUpdateDataMessage } from '../types/signaling.js';
+import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage, GameSettingDataMessage, PlayerStatusDataMessage, PlayerStatusUpdateBroadcastDataMessage, Location, Rotation, PlayerAudioUpdatePayload, AudioSourceData, PlayerAudioUpdateDataMessage } from '../types/signaling.js';
 
 const SIGNALING_SERVER_URL = 'ws://localhost:8080';
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];

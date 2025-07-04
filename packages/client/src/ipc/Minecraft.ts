@@ -68,7 +68,7 @@ class World {
   }
 
   async getOwnerName(): Promise<string> {
-    return "Owner"
+    return window.electronAPI.getLocalPlayerName();
   }
 
   getPlayerNames(): string[] {

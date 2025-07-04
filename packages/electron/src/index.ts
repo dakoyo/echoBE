@@ -1,20 +1,22 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
-import path from 'path';
-import isDev from 'electron-is-dev'
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { Player, Server, ServerEvent, World } from 'socket-be';
-import { PlayerData, TagData } from './types';
+const { app, BrowserWindow, ipcMain } = require('electron');
+const path = require('path');
+const isDev = require('electron-is-dev');
+const { Player, Server, ServerEvent, World } = require('socket-be');
+require('./types'); // Import types for JSDoc
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-let world: World | null = null;
-let server: Server | null = null;
-let mainWindow: BrowserWindow | null = null;
-let tickInterval: NodeJS.Timeout | null = null;
-let localPlayer: Player | null = null;
-let currentPlayers: [string, PlayerData][] = [];
+// Define variables
+/** @type {any} */
+let world = null;
+/** @type {any} */
+let server = null;
+/** @type {any} */
+let mainWindow = null;
+/** @type {NodeJS.Timeout|null} */
+let tickInterval = null;
+/** @type {any} */
+let localPlayer = null;
+/** @type {Array<any>} */
+let currentPlayers = [];
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -55,7 +57,11 @@ async function stopServerLogic() {
     console.log("Server stopped and resources cleaned up.");
 }
 
-ipcMain.handle("start-server", async (event, port: number) => {
+/**
+ * @param {any} event
+ * @param {number} port
+ */
+ipcMain.handle("start-server", async (event, port) => {
     // If a server is already running, stop it before starting a new one.
     if (server) {
         await stopServerLogic();
@@ -85,13 +91,14 @@ ipcMain.handle("start-server", async (event, port: number) => {
                 if (!localPlayer) return;
                 mainWindow?.webContents.send("tick");
 
-                const players: [string, PlayerData][] = [];
+                /** @type {Array<any>} */
+                const players = [];
                 const tags = await localPlayer.getTags();
                 for (const tag of tags || []) {
                     if (tag.startsWith("vc_")) {
                         // Use a try-catch here to prevent a single malformed tag from crashing the loop
                         try {
-                            const data = JSON.parse(tag.substring(3)) as TagData;
+                            const data = JSON.parse(tag.substring(3));
                             if (data.type === "playerData") {
                                 players.push([data.name, data]);
                             }
@@ -110,7 +117,7 @@ ipcMain.handle("start-server", async (event, port: number) => {
     } catch (e) {
         console.error("Failed to start server:", e);
         await stopServerLogic(); // Ensure cleanup on failed start
-        return { status: 'error', message: (e as Error).message };
+        return { status: 'error', message: e.message };
     }
 });
 
@@ -123,7 +130,12 @@ ipcMain.handle("requestPlayerData", () => {
     return currentPlayers;
 });
 
-ipcMain.handle("sendMessage", async (event, message: string, playerName?: string) => {
+/**
+ * @param {any} event
+ * @param {string} message
+ * @param {string} [playerName]
+ */
+ipcMain.handle("sendMessage", async (event, message, playerName) => {
     if (!world) {
         console.warn("Cannot send message, world is not initialized.");
         return;

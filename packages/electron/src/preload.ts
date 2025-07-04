@@ -1,46 +1,78 @@
-import { contextBridge, ipcRenderer } from "electron";
+const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
     isElectron: true,
-    startServer: async (port: number) => {
+    /**
+     * @param {number} port
+     * @returns {Promise<any>}
+     */
+    startServer: async (port) => {
         return await ipcRenderer.invoke("start-server", port);
     },
+    /**
+     * @returns {Promise<any>}
+     */
     stopServer: async () => {
         return await ipcRenderer.invoke("stop-server");
     },
-    onPlayerJoin: (callback: (ev: { playerName: string }) => void) => {
+    /**
+     * @param {function({playerName: string}): void} callback
+     */
+    onPlayerJoin: (callback) => {
         ipcRenderer.on("playerJoin", (event, playerName) => {
             callback({ playerName });
         });
     },
 
+    /**
+     * @returns {Promise<string>}
+     */
     getLocalPlayerName: async () => {
         return await ipcRenderer.invoke("get-local-player-name");
     },
-    onPlayerLeave: (callback: (ev: { playerName: string }) => void) => {
+    /**
+     * @param {function({playerName: string}): void} callback
+     */
+    onPlayerLeave: (callback) => {
         ipcRenderer.on("playerLeave", (event, playerName) => {
             callback({ playerName });
         });
     },
-    onTick: (callback: () => void) => {
+    /**
+     * @param {function(): void} callback
+     */
+    onTick: (callback) => {
         ipcRenderer.on("tick", () => {
             callback();
         });
     },
-    onWorldConnected: (callback: () => void) => {
+    /**
+     * @param {function(): void} callback
+     */
+    onWorldConnected: (callback) => {
         ipcRenderer.on("worldConnected", () => {
             callback();
         });
     },
-    onCodeRequest: (callback: (ev: { playerName: string }) => void) => {
+    /**
+     * @param {function({playerName: string}): void} callback
+     */
+    onCodeRequest: (callback) => {
         ipcRenderer.on("codeRequest", (event, playerName) => {
             callback({ playerName });
         });
     },
+    /**
+     * @returns {Promise<any[]>}
+     */
     requestPlayerData: () => {
         return ipcRenderer.invoke("requestPlayerData");
     },
-    sendMessage(message: string, playerName: string) {
+    /**
+     * @param {string} message
+     * @param {string} playerName
+     */
+    sendMessage(message, playerName) {
         ipcRenderer.invoke("sendMessage", message, playerName);
     }
 });
