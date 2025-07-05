@@ -121,6 +121,7 @@ export interface AudioSourceData {
 export interface PlayerAudioUpdatePayload {
     listener: { location: Location; rotation: Rotation };
     sources: AudioSourceData[];
+    onlinePeers: { signalingId: string; name: string }[];
 }
 
 

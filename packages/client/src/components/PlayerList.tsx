@@ -1,4 +1,5 @@
 
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Role } from '../App.js';
 import { Player } from '../models/Player.js';
@@ -10,6 +11,8 @@ import { VolumeIcon } from './icons/VolumeIcon.js';
 import { HeadphonesIcon } from './icons/HeadphonesIcon.js';
 import { Location, PlayerAudioUpdatePayload } from '../types/signaling.js';
 
+type ConnectionStatus = RTCPeerConnectionState | 'offline';
+
 interface PlayerListProps {
   room: Room;
   currentRole: Role;
@@ -20,6 +23,7 @@ interface PlayerListProps {
   audioContext: AudioContext | null;
   audioPositions: PlayerAudioUpdatePayload | null;
   audibleRange: number;
+  peerStatuses: Map<string, RTCPeerConnectionState>;
 }
 
 const PlayerItem: React.FC<{
@@ -28,15 +32,29 @@ const PlayerItem: React.FC<{
   onKick: () => void;
   onVolumeChange: (volume: number) => void;
   isSpeaking: boolean;
-}> = ({ player, canKick, onKick, onVolumeChange, isSpeaking }) => {
-    const isOffline = !player.isOnline;
+  connectionStatus: ConnectionStatus;
+}> = ({ player, canKick, onKick, onVolumeChange, isSpeaking, connectionStatus }) => {
+    const isEffectivelyOffline = !player.isOnline || ['disconnected', 'failed', 'closed', 'offline'].includes(connectionStatus);
     const speakingClasses = isSpeaking ? 'ring-2 ring-green-400' : '';
     
+    const getStatusColor = () => {
+        switch (connectionStatus) {
+            case 'connected': return 'bg-green-500';
+            case 'new':
+            case 'connecting': return 'bg-yellow-500';
+            case 'disconnected':
+            case 'failed':
+            case 'closed': return 'bg-red-500';
+            case 'offline':
+            default: return 'bg-gray-500';
+        }
+    };
+
     return (
-        <div className={`flex flex-col bg-[#3C3C3C] p-3 gap-3 border-2 border-t-[#545454] border-l-[#545454] border-b-[#272727] border-r-[#272727] transition-all duration-200 ${isOffline ? 'opacity-50' : ''} ${speakingClasses}`}>
+        <div className={`flex flex-col bg-[#3C3C3C] p-3 gap-3 border-2 border-t-[#545454] border-l-[#545454] border-b-[#272727] border-r-[#272727] transition-all duration-200 ${isEffectivelyOffline ? 'opacity-50' : ''} ${speakingClasses}`}>
             {/* Top Row: Name and Owner Icon */}
             <div className="flex items-center">
-                <div className={`w-3 h-3 rounded-full mr-3 flex-shrink-0 border-2 border-black ${player.isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></div>
+                <div className={`w-3 h-3 rounded-full mr-3 flex-shrink-0 border-2 border-black ${getStatusColor()}`}></div>
                 <div className="w-6 mr-2 flex-shrink-0">
                     {player.isOwner && <CrownIcon className="w-6 h-6 text-yellow-400"/>}
                 </div>
@@ -54,9 +72,9 @@ const PlayerItem: React.FC<{
                     onChange={(e) => onVolumeChange(Number(e.target.value))}
                     className="flex-grow w-full"
                     aria-label={`${player.name}の音量`}
-                    disabled={isOffline}
+                    disabled={isEffectivelyOffline}
                 />
-                <span className={`text-sm font-mono w-12 text-right ${isOffline ? 'text-gray-400' : 'text-white'}`}>{player.volume}%</span>
+                <span className={`text-sm font-mono w-12 text-right ${isEffectivelyOffline ? 'text-gray-400' : 'text-white'}`}>{player.volume}%</span>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <MicIcon className={`w-6 h-6 ${player.isMuted ? 'text-red-500' : 'text-gray-400'}`} muted={player.isMuted}/>
                     <HeadphonesIcon className={`w-6 h-6 ${player.isDeafened ? 'text-red-500' : 'text-gray-400'}`} muted={player.isDeafened}/>
@@ -64,9 +82,9 @@ const PlayerItem: React.FC<{
                 {canKick && (
                     <button 
                       onClick={onKick} 
-                      className={`text-gray-400 ${isOffline ? '' : 'hover:text-red-500'} disabled:cursor-not-allowed disabled:text-gray-600`} 
+                      className={`text-gray-400 ${isEffectivelyOffline ? '' : 'hover:text-red-500'} disabled:cursor-not-allowed disabled:text-gray-600`} 
                       aria-label={`${player.name}をキック`}
-                      disabled={isOffline || player.isOwner}
+                      disabled={isEffectivelyOffline || player.isOwner}
                     >
                         <KickIcon className="w-5 h-5 flex-shrink-0"/>
                     </button>
@@ -152,7 +170,7 @@ const PlayerAudio: React.FC<{
       const panner = pannerNodeRef.current;
       const gain = gainNodeRef.current;
 
-      const targetGain = isDeafened ? 0 : volume / 100;
+      const targetGain = isDeafened ? 0 : volume / 50;
       gain.gain.setTargetAtTime(targetGain, audioContext.currentTime, 0.01);
 
       // We want volume to be ~5% at the edge of the audibleRange.
@@ -225,7 +243,7 @@ const PlayerAudio: React.FC<{
   return <audio ref={audioRef} playsInline muted style={{ display: 'none' }} />;
 };
 
-export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKick, onVolumeChange, selectedAudioOutput, isDeafened, audioContext, audioPositions, audibleRange }) => {
+export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKick, onVolumeChange, selectedAudioOutput, isDeafened, audioContext, audioPositions, audibleRange, peerStatuses }) => {
   const [speakingPlayers, setSpeakingPlayers] = useState<Set<string>>(new Set());
 
   return (
@@ -246,6 +264,22 @@ export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKic
         }
 
         const isSpeaking = speakingPlayers.has(player.name);
+        
+        const p2pStatus = player.signalingId ? peerStatuses.get(player.signalingId) : undefined;
+        let connectionStatus: ConnectionStatus;
+        if (!player.isOnline) {
+            connectionStatus = 'offline';
+        } else {
+            // Player is marked as 'online' in the room model
+            if (p2pStatus) {
+                connectionStatus = p2pStatus; // We have a specific P2P state
+            } else {
+                // No specific P2P state yet.
+                // The owner is connected via data channel, so we can consider them 'connected'.
+                // Other players are in the process of establishing a P2P link.
+                connectionStatus = player.isOwner ? 'connected' : 'connecting';
+            }
+        }
 
         return (
             <React.Fragment key={player.id}>
@@ -255,6 +289,7 @@ export const PlayerList: React.FC<PlayerListProps> = ({ room, currentRole, onKic
                     onKick={() => onKick(player)}
                     onVolumeChange={(volume) => onVolumeChange(player, volume)}
                     isSpeaking={isSpeaking && isAudibleForGlow}
+                    connectionStatus={connectionStatus}
                 />
                 {player.stream && audioContext && (
                   <PlayerAudio

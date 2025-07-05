@@ -3,7 +3,7 @@ import { Player } from '../models/Player.js';
 import { world } from '../ipc/Minecraft.js';
 import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage, GameSettingDataMessage, PlayerStatusDataMessage, PlayerStatusUpdateBroadcastDataMessage, Location, Rotation, PlayerAudioUpdatePayload, AudioSourceData, PlayerAudioUpdateDataMessage } from '../types/signaling.js';
 
-const SIGNALING_SERVER_URL = 'wss://echobe-k3pu.onrender.com';
+const SIGNALING_SERVER_URL = 'ws://localhost:8080';
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 type Role = 'owner' | 'player';
@@ -25,6 +25,7 @@ interface SignalingServiceEvents {
   'game-setting-update': (payload: { audioRange: number; spectatorVoice: boolean }) => void;
   'player-status-update': (payload: PlayerStatusUpdateBroadcastDataMessage['payload']) => void;
   'player-audio-update': (payload: PlayerAudioUpdatePayload) => void;
+  'peer-connection-state-changed': (payload: { peerId: string, state: RTCPeerConnectionState }) => void;
 }
 
 export class SignalingService extends EventEmitter {
@@ -207,9 +208,12 @@ export class SignalingService extends EventEmitter {
     };
     
     pc.onconnectionstatechange = () => {
-        console.log(`[WebRTC] Peer ${peerId} connection state changed to: ${pc.connectionState}`);
-        if(pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-            console.error(`[WebRTC] Peer ${peerId} disconnected or failed. Cleaning up.`);
+        const state = pc.connectionState;
+        console.log(`[WebRTC] Peer ${peerId} connection state changed to: ${state}`);
+        this.emit('peer-connection-state-changed', { peerId, state });
+        
+        if(state === 'disconnected' || state === 'failed' || state === 'closed') {
+            console.error(`[WebRTC] Peer ${peerId} in state ${state}. Cleaning up connection.`);
             this.closePeerConnection(peerId);
         }
     };
@@ -367,7 +371,27 @@ export class SignalingService extends EventEmitter {
                     this.emit('player-status-update', (message as PlayerStatusUpdateBroadcastDataMessage).payload);
                     break;
                 case 'player-audio-update':
-                    this.emit('player-audio-update', (message as PlayerAudioUpdateDataMessage).payload);
+                    const payload = (message as PlayerAudioUpdateDataMessage).payload;
+                    this.emit('player-audio-update', payload);
+
+                    // Health Check logic
+                    if (this.clientId && payload.onlinePeers) {
+                        payload.onlinePeers.forEach(peer => {
+                            if (peer.signalingId === this.clientId) return; // Skip self
+
+                            const pc = this.peerConnections.get(peer.signalingId);
+                            if (!pc || ['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
+                                // Connection is missing or broken, need to reconnect.
+                                // Determine initiator to avoid glare.
+                                if (this.clientId! < peer.signalingId) {
+                                    console.log(`[Health Check] Reconnecting to ${peer.name} (${peer.signalingId}) as initiator.`);
+                                    this.initiatePeerToPeerOffer(peer.signalingId, false);
+                                } else {
+                                    console.log(`[Health Check] Waiting for ${peer.name} (${peer.signalingId}) to reconnect as they are the initiator.`);
+                                }
+                            }
+                        });
+                    }
                     break;
             }
         }
@@ -446,6 +470,13 @@ export class SignalingService extends EventEmitter {
   }
 
   private async initiatePeerToPeerOffer(peerId: string, createDataChannel: boolean) {
+      // Avoid re-initiating if a connection is already in progress
+      const existingPc = this.peerConnections.get(peerId);
+      if (existingPc && existingPc.connectionState === 'connecting') {
+        console.log(`P2P offer to ${peerId} already in progress. Skipping.`);
+        return;
+      }
+
       const pc = await this.createPeerConnection(peerId, createDataChannel);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -530,6 +561,18 @@ export class SignalingService extends EventEmitter {
         }
     });
 
+    // Build the list of all peers currently connected to the owner
+    const onlinePeers: { signalingId: string; name: string }[] = [];
+    if (ownerName) {
+        onlinePeers.push({ signalingId: this.clientId, name: ownerName });
+    }
+    this.dataChannels.forEach((_, clientId) => {
+        const playerName = this.playerNames.get(clientId);
+        if (playerName) {
+            onlinePeers.push({ signalingId: clientId, name: playerName });
+        }
+    });
+
     allPlayerData.forEach((listenerData, listenerId) => {
         const sources: AudioSourceData[] = [];
         allPlayerData.forEach((sourceData, sourceId) => {
@@ -549,6 +592,7 @@ export class SignalingService extends EventEmitter {
         const payload: PlayerAudioUpdatePayload = {
             listener: { location: listenerData.location, rotation: listenerData.rotation },
             sources: sources,
+            onlinePeers: onlinePeers,
         };
 
         if (listenerId === this.clientId) {

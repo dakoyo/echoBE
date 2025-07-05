@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Sidebar } from './Sidebar.js';
 import { PlayerList } from './PlayerList.js';
@@ -40,6 +41,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [audioPositions, setAudioPositions] = useState<PlayerAudioUpdatePayload | null>(null);
+  const [peerStatuses, setPeerStatuses] = useState<Map<string, RTCPeerConnectionState>>(new Map());
 
   // Create and manage the single AudioContext for the application
   useEffect(() => {
@@ -150,6 +152,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     // WebRTC connection fails, mark as offline.
     const handleStreamRemoved = (clientId: string) => {
       setRoom(prevRoom => prevRoom.removeStreamFromPlayer(clientId));
+      setPeerStatuses(prev => {
+          const newStatuses = new Map(prev);
+          newStatuses.delete(clientId);
+          return newStatuses;
+      });
     };
 
     const handleChatMessage = ({ senderName, text }: { senderName: string; text: string }) => {
@@ -199,6 +206,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     const handlePlayerStatusUpdate = (payload: PlayerStatusUpdateBroadcastDataMessage['payload']) => {
       setRoom(prevRoom => prevRoom.updatePlayerStatus(payload.clientId, payload.isMuted, payload.isDeafened));
     };
+    
+    const handlePeerStateChange = ({ peerId, state }: { peerId: string, state: RTCPeerConnectionState }) => {
+      setPeerStatuses(prev => {
+        const newStatuses = new Map(prev);
+        newStatuses.set(peerId, state);
+        return newStatuses;
+      });
+    };
 
     signalingService.on('auth-success', handleAuthSuccess);
     signalingService.on('disconnect', handleDisconnect);
@@ -210,6 +225,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
     signalingService.on('game-setting-update', handleGameSettingUpdate);
     signalingService.on('player-status-update', handlePlayerStatusUpdate);
     signalingService.on('player-audio-update', handlePlayerAudioUpdate);
+    signalingService.on('peer-connection-state-changed', handlePeerStateChange);
     signalingService.on('error', handleError);
     signalingService.on('room-closed', handleRoomClosed);
 
@@ -225,6 +241,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
       signalingService.off('game-setting-update', handleGameSettingUpdate);
       signalingService.off('player-status-update', handlePlayerStatusUpdate);
       signalingService.off('player-audio-update', handlePlayerAudioUpdate);
+      signalingService.off('peer-connection-state-changed', handlePeerStateChange);
       signalingService.off('error', handleError);
       signalingService.off('room-closed', handleRoomClosed);
     };
@@ -422,6 +439,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
               audioContext={audioContext}
               audioPositions={audioPositions}
               audibleRange={audibleRange}
+              peerStatuses={peerStatuses}
             />
           </div>
           <div className="flex-shrink-0">
