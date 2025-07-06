@@ -6,7 +6,6 @@ require('./types'); // Import types for JSDoc
 
 import { World, Server as ServerType, ServerEvent as ServerEventTypes } from 'socket-be';
 
-
 // Define variables
 let world: World | null  = null;
 let server: ServerType | null = null;
@@ -17,6 +16,12 @@ let tickInterval = null;
 /** @type {any} */
 let localPlayer = null;
 let currentPlayers = new Map<string, any>(); // Map to hold player data
+
+function sendJSON(obj) {
+    if (!world) return;
+
+    world.runCommand(`scriptevent vc:msg ${JSON.stringify(obj)}`);
+}
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -82,6 +87,9 @@ ipcMain.handle("start-server", async (event, port) => {
             await world.runCommand(`scriptevent vc:connected ${localPlayer.name}`);
             setTimeout(() => {
                 mainWindow?.webContents.send("worldConnected");
+                sendJSON({
+                    type: "worldConnected"
+                })
             }, 500)
         });
         server.on(ServerEvent.PlayerJoin, ev => {
@@ -169,6 +177,19 @@ ipcMain.handle("get-local-player-name", async () => {
     }
     return localPlayer.name;
 });
+
+ipcMain.handle("notifyCode", async (event, playerName, roomCode, playerCode) => {
+    if (!world) {
+        console.warn("Cannot notify code, world is not initialized.");
+        return;
+    }
+    sendJSON({
+        type: "notifyCode",
+        name: playerName,
+        roomCode,
+        playerCode
+    })
+})
 
 app.whenReady().then(createWindow);
 

@@ -140,8 +140,7 @@ class World {
           console.warn(`No code found for player ${playerName} to notify.`);
           return;
       }
-      const message = `=====EchoBE プレイヤー情報=====\nルームID：${roomCode}\nプレイヤー名：${playerName}\nプレイヤーコード：${code}\n===========================`;
-      this.sendMessage(message, playerName);
+      notifyCodes(playerName, roomCode, code)
   }
 
   notifyPlayersWithCodes(roomCode: string): void {
@@ -199,4 +198,11 @@ export const stopServer = async () => {
     return;
   }
   await window.electronAPI.stopServer();
+}
+export const notifyCodes = async (playerName: string, roomCode: string, playerCode: string) => {
+  if (!isElectron) {
+    console.warn("Not running in Electron environment. Cannot notify codes.");
+    return;
+  }
+  await window.electronAPI.notifyCode(playerName, roomCode, playerCode);
 }

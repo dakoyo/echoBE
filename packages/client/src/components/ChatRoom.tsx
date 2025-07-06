@@ -42,6 +42,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [audioPositions, setAudioPositions] = useState<PlayerAudioUpdatePayload | null>(null);
   const [peerStatuses, setPeerStatuses] = useState<Map<string, RTCPeerConnectionState>>(new Map());
+  const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = useState(true);
 
   // Create and manage the single AudioContext for the application
   useEffect(() => {
@@ -60,6 +61,13 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
         .catch((err: any) => console.error("Failed to set audio context sink", err));
     }
   }, [audioContext, selectedAudioOutput]);
+
+  // Effect to toggle noise suppression in the signaling service
+  useEffect(() => {
+    if (signalingService) {
+      signalingService.toggleNoiseSuppression(isNoiseSuppressionEnabled);
+    }
+  }, [isNoiseSuppressionEnabled, signalingService]);
 
 
   useEffect(() => {
@@ -404,6 +412,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ role, currentUser, onLeave, 
             spectatorVoice={spectatorVoice} onSpectatorVoiceChange={setSpectatorVoice}
             audioInputDevices={audioInputDevices} selectedAudioInput={selectedAudioInput} onAudioInputChange={handleAudioInputChange}
             audioOutputDevices={audioOutputDevices} selectedAudioOutput={selectedAudioOutput} onAudioOutputChange={setSelectedAudioOutput}
+            isNoiseSuppressionEnabled={isNoiseSuppressionEnabled} onNoiseSuppressionChange={setIsNoiseSuppressionEnabled}
           /> 
         </div>
 

@@ -171,7 +171,8 @@ const PlayerAudio: React.FC<{
       const gain = gainNodeRef.current;
 
       const targetGain = isDeafened ? 0 : volume / 50;
-      gain.gain.setTargetAtTime(targetGain, audioContext.currentTime, 0.01);
+      // Use direct value assignment for robustness, especially around AudioContext state changes.
+      gain.gain.value = targetGain;
 
       // We want volume to be ~5% at the edge of the audibleRange.
       // This is achieved by tuning the rolloffFactor of the inverse distance model.

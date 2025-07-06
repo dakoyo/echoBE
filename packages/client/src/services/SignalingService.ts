@@ -3,7 +3,7 @@ import { Player } from '../models/Player.js';
 import { world } from '../ipc/Minecraft.js';
 import type { SignalingMessage, OfferMessage, AnswerMessage, IceCandidateMessage, AuthMessage, AuthSuccessMessage, ErrorMessage, disconnectMessage, RoomCreatedMessage, NewClientMessage, OwnerInfoMessage, DataChannelMessage, OfferDataMessage, AnswerDataMessage, IceCandidateDataMessage, ClientJoinedDataMessage, RoomStateDataMessage, ChatDataMessage, ChatBroadcastDataMessage, ClientLeftDataMessage, GameSettingDataMessage, PlayerStatusDataMessage, PlayerStatusUpdateBroadcastDataMessage, Location, Rotation, PlayerAudioUpdatePayload, AudioSourceData, PlayerAudioUpdateDataMessage } from '../types/signaling.js';
 
-const SIGNALING_SERVER_URL = 'wss://echobe-k3pu.onrender.com';
+const SIGNALING_SERVER_URL = 'ws://localhost:8080';
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 type Role = 'owner' | 'player';
@@ -31,7 +31,7 @@ interface SignalingServiceEvents {
 export class SignalingService extends EventEmitter {
   private ws: WebSocket | null = null;
   private role: Role;
-  private localStream: MediaStream;
+  private localStream: MediaStream; // This will be the PROCESSED stream sent to peers
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private dataChannels: Map<string, RTCDataChannel> = new Map();
   private playerNames: Map<string, string> = new Map();
@@ -41,6 +41,16 @@ export class SignalingService extends EventEmitter {
   private persistentPeers: Set<string> = new Set();
   private expectingDisconnectFor: Set<string> = new Set();
   private latestGameSettings: { audioRange: number; spectatorVoice: boolean };
+
+  // Audio processing properties
+  private audioContext: AudioContext | null = null;
+  private rawInputStream: MediaStream; // The original, unprocessed stream from the microphone
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private highpassFilter: BiquadFilterNode | null = null;
+  private compressorNode: DynamicsCompressorNode | null = null;
+  private destinationNode: MediaStreamAudioDestinationNode | null = null;
+  private isNoiseSuppressionActive = true;
+
 
   on<K extends keyof SignalingServiceEvents>(eventName: K, listener: SignalingServiceEvents[K]): this {
     return super.on(eventName, listener);
@@ -58,13 +68,10 @@ export class SignalingService extends EventEmitter {
     return super.emit(eventName, ...args);
   }
 
-  constructor(role: Role, localStream: MediaStream, owner?: Player) {
+  constructor(role: Role, initialStream: MediaStream, owner?: Player) {
     super();
     this.role = role;
-    this.localStream = localStream;
-    // Initialize with default settings.
-    // For the owner, this provides a safe fallback.
-    // For a player, this is the state before receiving an update from the owner.
+    this.rawInputStream = initialStream;
     this.latestGameSettings = { audioRange: 48, spectatorVoice: true };
     
     if (owner) {
@@ -74,6 +81,49 @@ export class SignalingService extends EventEmitter {
     if (this.role === 'owner') {
       world.events.on('tick', this.handleTick.bind(this));
     }
+    
+    // Setup the audio processing chain
+    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    this.setupAudioProcessingChain();
+    this.localStream = this.destinationNode!.stream; // The stream to be sent to peers
+  }
+
+  private setupAudioProcessingChain() {
+    if (!this.audioContext) return;
+    
+    this.sourceNode = this.audioContext.createMediaStreamSource(this.rawInputStream);
+    
+    this.highpassFilter = this.audioContext.createBiquadFilter();
+    this.highpassFilter.type = 'highpass';
+    this.highpassFilter.frequency.value = 80;
+
+    this.compressorNode = this.audioContext.createDynamicsCompressor();
+    this.compressorNode.threshold.value = -50;
+    this.compressorNode.knee.value = 40;
+    this.compressorNode.ratio.value = 12;
+    this.compressorNode.attack.value = 0;
+    this.compressorNode.release.value = 0.25;
+
+    this.destinationNode = this.audioContext.createMediaStreamDestination();
+    
+    this.reconnectAudioNodes();
+  }
+
+  private reconnectAudioNodes() {
+    if (!this.sourceNode || !this.highpassFilter || !this.compressorNode || !this.destinationNode) return;
+    
+    this.sourceNode.disconnect();
+    
+    if (this.isNoiseSuppressionActive) {
+      this.sourceNode.connect(this.highpassFilter).connect(this.compressorNode).connect(this.destinationNode);
+    } else {
+      this.sourceNode.connect(this.destinationNode);
+    }
+  }
+
+  public toggleNoiseSuppression(enabled: boolean) {
+    this.isNoiseSuppressionActive = enabled;
+    this.reconnectAudioNodes();
   }
 
   connect(roomCode?: string) {
@@ -609,25 +659,29 @@ export class SignalingService extends EventEmitter {
 
   public async updateLocalStream(deviceId: string, isMuted: boolean) {
     console.log(`Updating local stream to device: ${deviceId}`);
+    if (!this.audioContext) return;
+    
     try {
-      this.localStream.getTracks().forEach(track => track.stop());
+      // Stop old raw tracks
+      this.rawInputStream.getTracks().forEach(track => track.stop());
 
+      // Get new raw stream
       const newStream = await navigator.mediaDevices.getUserMedia({
         audio: { deviceId: { exact: deviceId } }
       });
+      this.rawInputStream = newStream;
+      
+      // Disconnect old source and create/connect new one
+      this.sourceNode?.disconnect();
+      this.sourceNode = this.audioContext.createMediaStreamSource(this.rawInputStream);
+      this.reconnectAudioNodes();
 
-      this.localStream = newStream;
-      const newAudioTrack = newStream.getAudioTracks()[0];
+      // The this.localStream (from destinationNode) is automatically updated with new track content.
+      // No `replaceTrack` is needed, which simplifies the logic greatly.
+      
+      // Ensure mute state is applied to the new raw track
+      this.setMute(isMuted);
 
-      if (newAudioTrack) {
-        newAudioTrack.enabled = !isMuted;
-        for (const pc of this.peerConnections.values()) {
-          const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-          if (sender) {
-            await sender.replaceTrack(newAudioTrack);
-          }
-        }
-      }
     } catch (err) {
       console.error("Failed to update local stream:", err);
       this.emit('error', { message: 'マイクの切り替えに失敗しました。' });
@@ -635,8 +689,8 @@ export class SignalingService extends EventEmitter {
   }
 
   public setMute(muted: boolean) {
-    if (this.localStream) {
-      this.localStream.getAudioTracks().forEach(track => {
+    if (this.rawInputStream) {
+      this.rawInputStream.getAudioTracks().forEach(track => {
         track.enabled = !muted;
       });
     }
@@ -753,6 +807,14 @@ export class SignalingService extends EventEmitter {
     this.persistentPeers.clear();
     this.dataChannels.clear();
     this.expectingDisconnectFor.clear();
+    
+    // Cleanup audio context and nodes
+    this.sourceNode?.disconnect();
+    this.highpassFilter?.disconnect();
+    this.compressorNode?.disconnect();
+    this.destinationNode?.disconnect();
+    this.audioContext?.close();
+    this.audioContext = null;
   }
 
   close() {

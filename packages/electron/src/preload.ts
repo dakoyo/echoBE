@@ -74,5 +74,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
      */
     sendMessage(message, playerName) {
         ipcRenderer.invoke("sendMessage", message, playerName);
+    },
+    notifyCode(playerName: string, roomCode: string, playerCode: string) {
+        return ipcRenderer.invoke("notifyCode", playerName, roomCode, playerCode);
     }
 });
