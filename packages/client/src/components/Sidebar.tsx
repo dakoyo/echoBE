@@ -16,8 +16,6 @@ interface SidebarProps {
   audioOutputDevices: MediaDeviceInfo[];
   selectedAudioOutput: string;
   onAudioOutputChange: (deviceId: string) => void;
-  isNoiseSuppressionEnabled: boolean;
-  onNoiseSuppressionChange: (enabled: boolean) => void;
 }
 
 const SettingCategory: React.FC<{title: string, children: React.ReactNode}> = ({title, children}) => (
@@ -111,9 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onAudioInputChange,
   audioOutputDevices,
   selectedAudioOutput,
-  onAudioOutputChange,
-  isNoiseSuppressionEnabled,
-  onNoiseSuppressionChange
+  onAudioOutputChange
 }) => {
   const isOwner = role === 'owner';
   
@@ -167,14 +163,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 checked={spectatorVoice}
                 onChange={onSpectatorVoiceChange}
                 disabled={!isOwner}
-            />
-        </SettingCategory>
-
-        <SettingCategory title="高度な音声設定">
-            <ToggleControl 
-                label="ノイズ抑制" 
-                checked={isNoiseSuppressionEnabled}
-                onChange={onNoiseSuppressionChange}
             />
         </SettingCategory>
     </aside>
